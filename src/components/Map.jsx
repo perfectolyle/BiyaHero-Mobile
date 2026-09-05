@@ -777,11 +777,16 @@ export const Map = ({
 	controls,
 	// Clears the tallest sheet on any screen using this map.
 	controlsBottom = 420,
-	// How much of the map's bottom edge a sheet covers, in dp. Handed to the
-	// map as padding, so its idea of "centre" is the centre of what can be
-	// seen: the navigation camera aimed at the middle of the whole screen
-	// put the driver's own vehicle squarely behind the sheet.
-	bottomInset = 0
+	// How much of the map's bottom edge is reserved, in dp. This is mapPadding:
+	// it moves BOTH Google's logo and the camera's idea of centre, which is why
+	// it is kept as small as the sheet's collapsed height on screens whose sheet
+	// can be pulled down — the logo then sits at the bottom of the map, never
+	// stranded halfway up it.
+	bottomInset = 0,
+	// Extra room the FIT alone needs, in dp: the rest of the sheet, which the
+	// camera must frame above but which the logo should not be pushed up by.
+	// Android adds this to mapPadding, so the two compose.
+	fitBottomExtra = 0
 }) => {
 	const { theme, scheme } = useTheme()
 	const { width: screenW, height: screenH } = useWindowDimensions()
@@ -999,9 +1004,10 @@ export const Map = ({
 		// is committed to it; a commuter who wants to look around turns follow off,
 		// which is the whole point of it being a toggle.
 		const span = 0.012
-		// With the sheet already handed to the map as padding, the centre IS
-		// the visible centre — biasing on top of it would shift twice.
-		const bias = bottomInset > 0 ? 0 : centerBias
+		// Screens that let mapPadding carry the whole sheet pass centerBias={0};
+		// screens that pad only for the logo keep a bias, because the rest of the
+		// sheet is still covering the bottom of the map.
+		const bias = centerBias
 
 		// Navigation keeps the last good heading: a vehicle waiting at a light
 		// produces fixes a metre apart whose bearing is noise, and swinging the
@@ -1114,12 +1120,20 @@ export const Map = ({
 		}
 
 		mapRef.current.fitToCoordinates(points, {
-			// The sheet is already padding when bottomInset is set; 380 on top of
-			// it squeezed the route into the top third of what was visible.
-			edgePadding: { top: 120, right: 80, bottom: bottomInset > 0 ? 120 : 380, left: 80 },
+			// Android ADDS this to the base map padding — MapView.java's
+			// appendMapPadding does setPadding(edge + base) — and then resets to
+			// base while the animation is still running. So with the sheet already
+			// reserved as mapPadding, a 120/380 edge left a 224dp band to fit a
+			// whole corridor into: opening a vehicle framed the route at province
+			// scale with the jeepney a dot in the middle. Once bottomInset carries
+			// the sheet, the edge is only breathing room, and symmetric — the
+			// asymmetry it used to carry is what mapPadding now expresses.
+			edgePadding: bottomInset > 0 || fitBottomExtra > 0
+				? { top: 48, right: 48, bottom: 48 + fitBottomExtra, left: 48 }
+				: { top: 120, right: 80, bottom: 380, left: 80 },
 			animated: true
 		})
-	}, [fitTo, fitKey, mapReady, follow])
+	}, [fitTo, fitKey, mapReady, follow, fitBottomExtra])
 
 	// Hold the map back until the saved region is known, otherwise it mounts on
 	// the default and visibly jumps.

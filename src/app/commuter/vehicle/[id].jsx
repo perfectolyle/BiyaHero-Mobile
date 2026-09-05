@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { View, ScrollView, Pressable, ActivityIndicator, Image, Modal } from 'react-native'
+import { View, ScrollView, Pressable, ActivityIndicator } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
@@ -7,28 +7,14 @@ import { MaterialIcons } from '@expo/vector-icons'
 import { Map } from '@/components/Map'
 import { Sheet } from '@/components/ui/Sheet'
 import { Txt } from '@/components/ui/Txt'
-import { Toggle } from '@/components/ui/Toggle'
-import { VehicleGlyph } from '@/components/VehicleGlyph'
-import { CapacityBadge } from '@/components/CapacityBadge'
 import { EmptyState } from '@/components/EmptyState'
+import { VehicleSheetHead, VehicleSheetBody, DriverSheet } from '@/components/VehicleSheet'
 import { fetchVehicle } from '@/services/api'
 import { useStore } from '@/services/store'
-import { distanceM } from '@/services/geo'
-import { elevation, VEHICLE_LABELS, PING_INTERVAL_MS } from '@/theme/tokens'
+import { elevation, PING_INTERVAL_MS, STALE_AFTER_MS } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
 import { useCopy } from '@/constants/copy'
 
-const DetailRow = ({ tint, children, title, subtitle }) => (
-	<View className="flex-row items-center gap-[14px] pb-4 pt-1">
-		<View className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: tint }}>
-			{children}
-		</View>
-		<View className="min-w-0 flex-1 gap-[2px]">
-			<Txt variant="headingS">{title}</Txt>
-			<Txt variant="caption" className="text-fg-secondary">{subtitle}</Txt>
-		</View>
-	</View>
-)
 
 /**
  * 08 · Vehicle Detail, and 09 · Weak Signal when the ping has gone stale.
@@ -50,8 +36,6 @@ export default function VehicleDetail() {
 
 	const myLocation = useStore(s => s.myLocation)
 	const checkProximity = useStore(s => s.checkProximity)
-	const watchingTripId = useStore(s => s.watchingTripId)
-	const toggleWatchingTrip = useStore(s => s.toggleWatchingTrip)
 	const stopWatchingTrip = useStore(s => s.stopWatchingTrip)
 	// The card Map Home already holds for this vehicle — same normaliser, same
 	// shape, everything but the route line. Opening from it means the screen
@@ -67,10 +51,36 @@ export default function VehicleDetail() {
 	const [missing, setMissing] = useState(false)
 	const [following, setFollowing] = useState(false)
 
-	// Mirrors the Figma frame: a 410 sheet on an 844 canvas, so the map keeps
-	// slightly over half the screen. The follow control rides 16dp above it.
-	const PEEK = 500
+	/**
+	 * How much of the screen the sheet keeps at rest, in dp.
+	 *
+	 * 500 came from a 410-on-844 Figma frame, but on this phone it left the map
+	 * 304dp — and the camera frames the route into the WHOLE map, so the jeepney
+	 * and the destination pin were routinely drawn in the part the sheet covers.
+	 * The screen opened on an empty-looking strip of road. Shorter, plus the
+	 * sheet handed to the map as padding below, is the pair that fixes it: the
+	 * same pair the driver's trip screen took.
+	 *
+	 * What has to survive at rest is the identity, where the jeepney is now, and
+	 * the one switch on the screen. The photo and the driver row are reference
+	 * material and are allowed to sit under the fold.
+	 */
+	const PEEK = 340
+	/** Collapsed: a grabber and a chevron, so the map can have the screen. */
+	const MINI = 92
 	const [driverOpen, setDriverOpen] = useState(false)
+	const [sheetPos, setSheetPos] = useState('peek')
+	/**
+	 * The last poll landed too long ago to keep calling this live.
+	 *
+	 * `stale` is computed when a payload is PARSED, so it only ever refreshes
+	 * while polls succeed. Walk into a dead spot and every poll from then on
+	 * rejects silently: the pin stops, and the screen goes on presenting a
+	 * frozen position as current — indefinitely, with a LIVE-looking card and a
+	 * street name that has not been true for ten minutes.
+	 */
+	const [offline, setOffline] = useState(false)
+	const lastOkRef = useRef(0)
 
 	useEffect(() => {
 		let cancelled = false
@@ -86,6 +96,8 @@ export default function VehicleDetail() {
 
 		const apply = data => {
 			seenTripId.current = data.tripId
+			lastOkRef.current = Date.now()
+			setOffline(false)
 			setVehicle(prev =>
 				prev?.route?.id === data.route?.id && prev.route.waypoints.length
 					? { ...data, route: { ...data.route, waypoints: prev.route.waypoints } }
@@ -129,10 +141,19 @@ export default function VehicleDetail() {
 							load()
 						}, 2000)
 					}
+
+					// A screen that IS drawn has the opposite problem: nothing on it
+					// changes when the polls stop, so say so once the last good
+					// answer is as old as a stale ping. Same threshold the cards use,
+					// so "live" means the same thing on both screens.
+					if (lastOkRef.current && Date.now() - lastOkRef.current > STALE_AFTER_MS) setOffline(true)
 				})
 				.finally(() => !cancelled && setLoading(false))
 
 		let retry = null
+		// Opened from a card the store already holds, that card IS a good answer;
+		// without this the age is measured from zero and the banner shows at once.
+		if (seed && !lastOkRef.current) lastOkRef.current = Date.now()
 		load()
 		const timer = setInterval(load, PING_INTERVAL_MS)
 
@@ -155,14 +176,13 @@ export default function VehicleDetail() {
 		if (missing && seenTripId.current) stopWatchingTrip(seenTripId.current)
 	}, [missing])
 
-	// Keyed on the URL string, not rebuilt per render. An object literal in
-	// source={{ uri }} is a new identity every time, and this screen re-polls
-	// every 8 s — so the Image was being handed a "new" source four times a
-	// minute and reloaded the same picture each time. That was the blink.
-	const photoSource = useMemo(
-		() => (vehicle?.photoUrl ? { uri: vehicle.photoUrl } : null),
-		[vehicle?.photoUrl]
-	)
+
+	/**
+	 * Live, or only claiming to be. Either the last ping the SERVER knows about
+	 * is old, or our own last successful poll is — a commuter cannot tell those
+	 * apart and neither matters to them: what is on screen is no longer current.
+	 */
+	const degraded = !!vehicle?.stale || offline
 
 	const destinationPin = useMemo(() => {
 		if (!vehicle) return null
@@ -180,9 +200,19 @@ export default function VehicleDetail() {
 	// geometry landed and never looked again, so the route drew under a camera
 	// that had never framed it. The load effect carries the same array forward
 	// once fetched, so this does not churn on every poll either.
+	// Before the polyline lands there is exactly one point here — the
+	// destination — and Map treats a lone point as a place to zoom to. So
+	// opening any vehicle flew the camera to the far end of the corridor at
+	// street zoom, with the jeepney itself kilometres off screen, and only
+	// pulled back once the geometry arrived. The jeepney and where it is going
+	// are the two points worth framing until the road itself is known.
 	const fitTo = useMemo(
-		() => [...(vehicle?.route?.waypoints ?? []), destinationPin].filter(Boolean),
-		[vehicle?.route?.waypoints, destinationPin]
+		() =>
+			(vehicle?.route?.waypoints?.length
+				? [...vehicle.route.waypoints, destinationPin]
+				: [vehicle?.position, destinationPin]
+			).filter(Boolean),
+		[vehicle?.route?.waypoints, vehicle?.position, destinationPin]
 	)
 
 	if (loading) {
@@ -240,9 +270,25 @@ export default function VehicleDetail() {
 				follow={following}
 				followKey={`v:${vehicle.id}`}
 				centerOn={vehicle.position}
+				// A finger beats the camera. Following re-aimed the map every 400ms,
+				// so a commuter who dragged up the road to see whether the jeepney
+				// had passed their street had the drag undone before they let go,
+				// and there was no way to look around without first finding the
+				// control. Map only reports real gestures, so the follow's own
+				// camera moves cannot switch it off.
+				onUserPan={() => setFollowing(false)}
 				// Clear of the sheet's resting height, so the control is never
 				// hidden behind it.
 				controlsBottom={PEEK + 16}
+				// The sheet, as map padding: the camera's idea of centre becomes the
+				// centre of what can actually be seen, and the route is framed into
+				// the visible strip instead of behind the sheet. It also lifts the
+				// Google attribution clear, which a sheet this deep was covering.
+				// Only the collapsed height, so the Google logo sits at the bottom
+				// left of the map rather than halfway up it; the fit is told about
+				// the rest of the sheet separately.
+				bottomInset={MINI}
+				fitBottomExtra={PEEK - MINI}
 				controls={
 					<Pressable
 						onPress={() => setFollowing(f => !f)}
@@ -262,10 +308,13 @@ export default function VehicleDetail() {
 						]}
 						className="h-14 w-14 items-center justify-center rounded-full border-[1.5px] active:opacity-80"
 					>
-						{/* Filled AND a different glyph: the design system says a state
-						    must never be carried by colour alone. */}
+						{/* A jeepney, not a second crosshair: beside the my-location
+						    control the two gps glyphs were the same ring and dot, so
+						    nothing said which button aimed at the vehicle and which
+						    aimed at you. State stays in the fill, never in colour alone
+						    — the glyph itself names the target. */}
 						<MaterialIcons
-							name={following ? 'gps-fixed' : 'gps-not-fixed'}
+							name="directions-bus"
 							size={24}
 							color={following ? theme.text.onBrand : theme.icon.secondary}
 						/>
@@ -289,144 +338,25 @@ export default function VehicleDetail() {
 			    scroll view. Only the head drags the sheet open, and with the
 			    grabber alone as the target the rest of this sheet — the opt-in
 			    switch at the bottom included — could not be reached at all. */}
+			{/* The identity block is the sheet's HEAD, not the first thing in the
+			    scroll view — only the head drags the sheet open. Head and body are
+			    the same components the map home raises in place, so the deep link
+			    and the tap show one jeepney one way. */}
 			<Sheet
-				// Tall enough that the opt-in switch is on screen at rest. It is
-				// the only thing on this sheet a commuter can act on, and behind
-				// a drag it may as well not exist. Raised from 470 when the
-				// vehicle photo was added: the photo pushed the switch off the
-				// peek, which is exactly the failure this number exists to stop.
 				peekHeight={PEEK}
+				miniHeight={MINI}
+				position={sheetPos}
+				onPositionChange={setSheetPos}
 				head={
-					/* The whole row opens the driver sheet. The 40-tall pill it replaces sat
-					   under the 48 touch floor and shared the destination's row, squeezing
-					   it; as a TRAILING disclosure the chevron centres against the block,
-					   which is the idiom for "this row opens something". */
-					<Pressable
-						onPress={() => vehicle.driver_name && setDriverOpen(true)}
-						accessibilityRole={vehicle.driver_name ? 'button' : undefined}
-						accessibilityLabel={vehicle.driver_name ? copy.vehicle.viewDriver : undefined}
-						className="flex-row items-center gap-3 pb-3 pt-1 active:opacity-70"
-					>
-						<View
-							className="h-12 w-12 items-center justify-center rounded-md border-2 bg-surface-sunken"
-							style={{ borderColor: vehicle.stale ? theme.border.strong : theme.route[1] }}
-						>
-							<VehicleGlyph
-								type={vehicle.vehicle_type}
-								color={vehicle.stale ? theme.icon.muted : theme.icon.primary}
-							/>
-						</View>
-						<View className="min-w-0 flex-1 gap-[2px]">
-							<Txt variant="headingL" numberOfLines={1}>{vehicle.destination}</Txt>
-							<View className="flex-row items-center gap-2">
-								{/* The plate gives way, never the badge: on a narrow phone a
-								    long plate would otherwise push the capacity off the row.
-								    The vehicle TYPE is the glyph on the left — the word cost 69dp
-								    and was rendering against a ramp step named bodyS, which is not on the
-								    type ramp, so it fell back to the platform font. */}
-								{/* A bus is known by the name painted along its side — nobody
-								    reads a plate on a moving Victory Liner, and "Hino RK1J
-								    2017" means nothing to a passenger. Jeepneys are
-								    owner-operated and carry no company, so they keep the
-								    plate. Whichever is NOT shown is in the driver sheet. */}
-								{vehicle.operator ? (
-									<Txt variant="bodyMStrong" numberOfLines={1} className="shrink text-fg">
-										{vehicle.operator}
-									</Txt>
-								) : (
-									<Txt variant="monoData" numberOfLines={1} className="shrink text-fg-secondary">
-										{vehicle.plate_number}
-									</Txt>
-								)}
-								{/* Capacity, not a VERIFIED badge. Every driver on the platform is
-								    verified — it is the login itself — so the badge said nothing
-								    while occupying the one spot a commuter reads before deciding
-								    whether to run for this jeepney. */}
-								<CapacityBadge state={vehicle.capacity} />
-							</View>
-						</View>
-						{!!vehicle.driver_name && (
-							<View className="flex-row items-center gap-[6px]">
-								<View className="h-8 w-8 items-center justify-center rounded-full bg-surface-sunken">
-									<Txt variant="labelS" className="text-fg-secondary">{vehicle.driver_name.charAt(0)}</Txt>
-								</View>
-								<MaterialIcons name="chevron-right" size={20} color={theme.icon.muted} />
-							</View>
-						)}
-					</Pressable>
+					<VehicleSheetHead
+						vehicle={vehicle}
+						degraded={degraded}
+						onOpenDriver={() => setDriverOpen(true)}
+					/>
 				}
 			>
 				<ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="pb-10">
-					{/* What is actually coming down the road. A plate identifies a
-					    jeepney only once it is close enough to read; paint and
-					    shape are what a commuter matches from a corner.
-
-					    A fixed 16:9 box, not a fixed height: h-40 was a 2.16:1
-					    letterbox on this phone and nearly square on a narrow one, so
-					    one photo cropped differently per device. Ratio first, cover
-					    crop second, means a driver's upload of any shape lands as the
-					    same frame everywhere. 2:1 rather than 16:9 because the sheet
-					    cannot afford the extra 22dp — the opt-in switch below is the
-					    only control on this screen and has to stay above the fold. */}
-					{!!photoSource && (
-						<Image
-							source={photoSource}
-							style={{ aspectRatio: 16 / 9 }}
-							className="mb-4 w-full rounded-lg bg-surface-sunken"
-							resizeMode="cover"
-							accessibilityLabel={copy.vehicle.photoAlt(vehicle.destination)}
-						/>
-					)}
-
-					{vehicle.stale && (
-						<View className="mt-4 flex-row items-start gap-3 rounded-lg bg-capacity-stale-bg p-4">
-							<MaterialIcons name="signal-wifi-statusbar-null" size={18} color={theme.capacity.stale.fg} />
-							<View className="min-w-0 flex-1">
-								<Txt variant="bodyMStrong" className="text-capacity-stale-fg">{copy.vehicle.staleTitle}</Txt>
-								<Txt variant="caption" className="text-fg-secondary">{copy.vehicle.staleBody}</Txt>
-							</View>
-						</View>
-					)}
-
-					<View>
-						{/* The LIVE fact leads. "Buendia -> Baclaran" reads the same on
-						    every poll; where the jeepney is right now is what a commuter
-						    at a corner is actually reading for, and it was sitting in
-						    12px caption on the second line under a static route name. */}
-						<DetailRow
-							tint={theme.brand.subtle}
-							title={
-								vehicle.current_street
-									? (vehicle.stale
-										? copy.vehicle.lastOnStreet(vehicle.current_street)
-										: copy.vehicle.onStreet(vehicle.current_street))
-									: (vehicle.route?.label ?? vehicle.destination)
-							}
-							subtitle={[
-								vehicle.current_street ? (vehicle.route?.label ?? vehicle.destination) : null,
-								vehicle.route?.length_km ? copy.vehicle.routeLength(vehicle.route.length_km) : null,
-								myLocation && vehicle.position ? copy.vehicle.away(distanceM(myLocation, vehicle.position)) : null
-							].filter(Boolean).join(' · ')}
-						>
-							<MaterialIcons name="place" size={20} color={theme.brand.hover} />
-						</DetailRow>
-
-					</View>
-
-					<View className="mt-4 flex-row items-center gap-[14px] rounded-lg bg-surface-sunken p-[14px]">
-						<View className="h-11 w-11 items-center justify-center rounded-full bg-brand-subtle">
-							<MaterialIcons name="person-pin-circle" size={22} color={theme.brand.hover} />
-						</View>
-						<View className="min-w-0 flex-1 gap-[2px]">
-							<Txt variant="bodyMStrong">{copy.vehicle.watchTitle}</Txt>
-							<Txt variant="caption" className="text-fg-secondary">{copy.vehicle.watchBody}</Txt>
-						</View>
-						<Toggle
-							value={watchingTripId === vehicle.tripId}
-							onValueChange={() => toggleWatchingTrip(vehicle.tripId, { destination: vehicle.destination, plate: vehicle.plate_number })}
-							accessibilityLabel={copy.vehicle.watchTitle}
-						/>
-					</View>
+					<VehicleSheetBody vehicle={vehicle} degraded={degraded} />
 				</ScrollView>
 			</Sheet>
 
@@ -434,68 +364,7 @@ export default function VehicleDetail() {
 			    driving, how long they have run this route, and what the vehicle
 			    actually is. Kept off the main sheet so the opt-in switch stays
 			    reachable without a drag. */}
-			<Modal
-				visible={driverOpen}
-				transparent
-				animationType="slide"
-				onRequestClose={() => setDriverOpen(false)}
-			>
-				<Pressable className="flex-1 justify-end bg-black/40" onPress={() => setDriverOpen(false)}>
-					{/* Swallows taps so pressing the card itself does not dismiss. */}
-					<Pressable
-						onPress={() => {}}
-						style={{ paddingBottom: insets.bottom + 24 }}
-						className="gap-5 rounded-t-2xl bg-surface px-6 pt-5"
-					>
-						<View className="flex-row items-center justify-between">
-							<Txt variant="headingS">{copy.vehicle.driverSheetTitle}</Txt>
-							<Pressable
-								onPress={() => setDriverOpen(false)}
-								accessibilityRole="button"
-								accessibilityLabel={copy.common.close}
-								className="h-10 w-10 items-center justify-center rounded-full bg-surface-sunken active:opacity-70"
-							>
-								<MaterialIcons name="close" size={20} color={theme.icon.secondary} />
-							</Pressable>
-						</View>
-
-						<View className="flex-row items-center gap-[14px]">
-							<View className="h-14 w-14 items-center justify-center rounded-full bg-surface-sunken">
-								<Txt variant="headingS" className="text-fg-secondary">
-									{vehicle.driver_name?.charAt(0)}
-								</Txt>
-							</View>
-							<View className="min-w-0 flex-1 gap-[2px]">
-								<Txt variant="headingS" numberOfLines={1}>{vehicle.driver_name}</Txt>
-								<Txt variant="caption" className="text-fg-secondary">
-									{vehicle.is_verified
-										? copy.vehicle.verifiedDriver(vehicle.driver_years)
-										: copy.vehicle.unverifiedDriver(vehicle.driver_years)}
-								</Txt>
-							</View>
-						</View>
-
-						<View className="gap-3 rounded-lg bg-surface-sunken p-4">
-							{[
-								[copy.vehicle.typeLabel, VEHICLE_LABELS[vehicle.vehicle_type] ?? vehicle.vehicle_type],
-								...(vehicle.operator ? [[copy.vehicle.operatorLabel, vehicle.operator]] : []),
-								[copy.vehicle.plateLabel, vehicle.plate_number],
-								// The model is the other half of "what am I looking for":
-								// paint and shape from the photo, make and year from here.
-								[copy.vehicle.modelLabel, vehicle.model || copy.vehicle.unknownModel],
-								// Painted far larger than the plate, and what terminals and
-								// dispatchers actually call a unit by.
-								...(vehicle.body_number ? [[copy.vehicle.bodyLabel, vehicle.body_number]] : [])
-							].map(([label, value]) => (
-								<View key={label} className="flex-row items-center justify-between gap-4">
-									<Txt variant="caption" className="text-fg-secondary">{label}</Txt>
-									<Txt variant="bodyMStrong" numberOfLines={1} className="shrink text-right">{value}</Txt>
-								</View>
-							))}
-						</View>
-					</Pressable>
-				</Pressable>
-			</Modal>
+			<DriverSheet vehicle={vehicle} visible={driverOpen} onClose={() => setDriverOpen(false)} />
 		</View>
 	)
 }

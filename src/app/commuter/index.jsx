@@ -10,6 +10,7 @@ import { SearchBar } from '@/components/SearchBar'
 import { VehicleCard } from '@/components/VehicleCard'
 import { EmptyState } from '@/components/EmptyState'
 import { Sheet } from '@/components/ui/Sheet'
+import { VehicleSheetHead, VehicleSheetBody, DriverSheet } from '@/components/VehicleSheet'
 import { Txt } from '@/components/ui/Txt'
 import { Chip } from '@/components/ui/Chip'
 import { fetchRoute } from '@/services/api'
@@ -25,6 +26,20 @@ import { useCopy } from '@/constants/copy'
  * drags the map to their area, and searching FILTERS this view rather than
  * navigating away from it.
  */
+/**
+ * How much of the screen the sheet keeps at rest, in dp. Also handed to the map
+ * as padding, so the camera frames into the part that is visible and Google's
+ * attribution is not buried under the sheet.
+ */
+const PEEK = 330
+
+/**
+ * The collapsed stop: a grabber, a chevron and nothing else, so the map can
+ * have almost the whole screen. Not zero — a sheet that can vanish is a sheet
+ * the commuter has to know a gesture to get back.
+ */
+const MINI = 92
+
 export default function MapHome() {
 	const copy = useCopy()
 	const { theme, statusBar } = useTheme()
@@ -43,8 +58,6 @@ export default function MapHome() {
 	const destinationResolved = useStore(s => s.destinationResolved)
 	const selectedVehicleId = useStore(s => s.selectedVehicleId)
 	const setVehicleFilter = useStore(s => s.setVehicleFilter)
-	const radiusKm = useStore(s => s.radiusKm)
-	const setRadiusKm = useStore(s => s.setRadiusKm)
 	const clearDestination = useStore(s => s.clearDestination)
 	const selectVehicle = useStore(s => s.selectVehicle)
 	const startPolling = useStore(s => s.startPolling)
@@ -63,6 +76,13 @@ export default function MapHome() {
 	const awaitingFirstReply = !hasReplied && !error
 
 	const [locateNonce, setLocateNonce] = useState(0)
+	// Where the sheet is resting. The map is padded by it, so collapsing the
+	// sheet genuinely gives the map the screen rather than just covering less.
+	const [sheetPos, setSheetPos] = useState('peek')
+	const [driverOpen, setDriverOpen] = useState(false)
+	// Camera committed to the selected jeepney. Off by default: the commuter
+	// asked to see ONE vehicle, not to have the map taken away from them.
+	const [following, setFollowing] = useState(false)
 
 	const onCrosshair = async () => {
 		if (myLocationOn) {
@@ -83,10 +103,18 @@ export default function MapHome() {
 	)
 
 	const allStale = vehicles.length > 0 && vehicles.every(v => v.stale)
+	// The selected jeepney is only as live as the last answer about it: either
+	// the server's ping is old, or ours stopped arriving. A commuter cannot tell
+	// those apart and does not need to — both mean what is on screen is a memory.
+	const degradedFleet = !!error && vehicles.length > 0
+	// The type chip filters on the server, so with one on the number below is
+	// about the filter, not about the road.
+	const filtering = vehicleFilter !== 'all'
 	const selected = useMemo(
 		() => vehicles.find(v => v.id === selectedVehicleId),
 		[vehicles, selectedVehicleId]
 	)
+	const degraded = !!selected?.stale || degradedFleet
 	// The listing carries route IDS, not geometry — twenty-one polylines were
 	// 262 KB of JSON every eight seconds to draw at most one line. The corridor
 	// for the vehicle actually tapped is fetched once and kept, so re-selecting
@@ -143,15 +171,11 @@ export default function MapHome() {
 	// is not proof), and the server's order stands.
 	const located = myLocationOn && !!myLocation
 
-	// The vehicles the map and the list agree on. The distance chip is applied
-	// here, on the phone: the server never learns where the commuter is from a
-	// filter any more than from a listing. A stale vehicle is judged by its last
-	// known position — that is the honest answer to "is it within 3 km".
-	const shownVehicles = useMemo(() => {
-		if (!located || radiusKm == null) return vehicles
-		const limit = radiusKm * 1000
-		return vehicles.filter(v => (distanceM(myLocation, v.position) ?? Infinity) <= limit)
-	}, [vehicles, located, radiusKm, myLocation])
+	// Everything the server sent. The distance chips that used to cut this down
+	// are gone: the list is already ordered by who reaches this commuter first,
+	// which answers the same question without hiding rides — and a filter that
+	// empties the list looks exactly like a corridor with nothing running.
+	const shownVehicles = vehicles
 
 	const fitTo = useMemo(
 		() =>
@@ -174,16 +198,32 @@ export default function MapHome() {
 	// citywide fleet is still in state), and the filter chips narrow it again;
 	// keying on the ids re-frames for those and stays put while they only move.
 	const fitKey = useMemo(
-		() => (destination ? `${destination.name}|${vehicleFilter}|${radiusKm}|${shownVehicles.map(v => v.id).join(',')}` : 'none'),
-		[destination, vehicleFilter, radiusKm, shownVehicles]
+		() => (destination ? `${destination.name}|${vehicleFilter}|${shownVehicles.map(v => v.id).join(',')}` : 'none'),
+		[destination, vehicleFilter, shownVehicles]
 	)
 
 	// Stable identity: memoised pins and cards compare onSelect/onPress by
 	// reference, so an inline arrow here would defeat them every poll.
+	//
+	// Tapping a jeepney used to push a second screen that mounted a second map,
+	// refetched the corridor and re-framed the camera — the map visibly tore
+	// down and rebuilt around a vehicle the commuter was already looking at.
+	// The detail is the same sheet over the same map now: it rises, the map
+	// underneath does not move, and closing it lowers the sheet back to the
+	// list. The route line and the destination pin were already drawn here for
+	// the selected vehicle, so there was never much on that screen worth a
+	// second MapView.
 	const openVehicle = useCallback(vehicle => {
 		selectVehicle(vehicle.id)
-		router.push(`/commuter/vehicle/${vehicle.id}`)
-	}, [selectVehicle, router])
+		setSheetPos('peek')
+		setFollowing(false)
+	}, [selectVehicle])
+
+	const closeVehicle = useCallback(() => {
+		selectVehicle(null)
+		setDriverOpen(false)
+		setFollowing(false)
+	}, [selectVehicle])
 
 	// With the blue dot on, the list answers "which ride reaches me first" —
 	// live vehicles nearest-first, stale ones after (their "position" is only
@@ -206,6 +246,38 @@ export default function MapHome() {
 	// Crosshair: the ONLY way the app ever asks for a commuter location. It
 	// rides in the map's own control column so it and the layer button share a
 	// right edge and an even gap, the way a map app stacks its buttons.
+	// Only while a jeepney is selected, and directly above the crosshair so the
+	// two "where should the camera look" controls sit together.
+	const followControl = selected ? (
+		<Pressable
+			onPress={() => setFollowing(f => !f)}
+			accessibilityRole="switch"
+			accessibilityState={{ checked: following }}
+			accessibilityLabel={copy.vehicle.centerOnVehicle}
+			// Colours inline rather than through a conditional className: a template
+			// literal is resolved at runtime and the two branches did not switch
+			// reliably, leaving the control reading ON from a cold start.
+			style={[
+				elevation.float,
+				{
+					backgroundColor: following ? theme.brand.default : theme.surface.default,
+					borderColor: following ? theme.brand.default : theme.border.subtle
+				}
+			]}
+			className="h-14 w-14 items-center justify-center rounded-full border-[1.5px] active:opacity-80"
+		>
+			{/* A jeepney, not a second crosshair. Beside the my-location control
+			    the two gps glyphs were indistinguishable — both a ring with a dot —
+			    so nothing on the map said which button aimed at the vehicle and
+			    which aimed at you. The vehicle button shows the thing it follows. */}
+			<MaterialIcons
+				name="directions-bus"
+				size={24}
+				color={following ? theme.text.onBrand : theme.icon.secondary}
+			/>
+		</Pressable>
+	) : null
+
 	const crosshair = (
 		<Pressable
 			onPress={onCrosshair}
@@ -237,10 +309,44 @@ export default function MapHome() {
 				fitTo={fitTo}
 				myLocation={myLocation}
 				locateNonce={locateNonce}
-				controls={crosshair}
-				controlsBottom={350}
+				// Following the glide rather than the raw fix is what makes the camera
+				// read as committed to a moving jeepney instead of hopping once per
+				// ping. A finger beats it: a real gesture releases the follow, so the
+				// map never fights a drag.
+				follow={!!selected && following}
+				followKey={selected ? `v:${selected.id}` : null}
+				centerOn={selected?.position ?? null}
+				onUserPan={() => setFollowing(false)}
+				controls={
+					<>
+						{followControl}
+						{crosshair}
+					</>
+				}
+				controlsBottom={PEEK + 20}
+				// The sheet, as map padding. Without it Google's own attribution sits
+				// under the sheet in every state — the sheet cannot go below its peek
+				// — which is a Maps terms violation as well as a thing the commuter
+				// never sees; and a searched destination was framed into a box whose
+				// lower third the sheet covered.
+				// Only the collapsed height, so the Google logo sits at the bottom
+				// left of the map instead of floating a third of the way up it. The
+				// fit is told about the rest of the sheet separately.
+				bottomInset={MINI}
+				fitBottomExtra={PEEK - MINI}
 			/>
 
+			{selected ? (
+				<Pressable
+					onPress={closeVehicle}
+					accessibilityRole="button"
+					accessibilityLabel={copy.common.back}
+					style={{ top: insets.top + 6, ...elevation.float }}
+					className="absolute left-6 h-12 w-12 items-center justify-center rounded-full border-[1.5px] border-line-subtle bg-surface active:opacity-80"
+				>
+					<MaterialIcons name="arrow-back" size={22} color={theme.icon.primary} />
+				</Pressable>
+			) : (
 			<View style={{ top: insets.top + 6 }} className="absolute left-6 right-6 flex-row items-center gap-2">
 				<View className="flex-1">
 					<SearchBar
@@ -259,10 +365,21 @@ export default function MapHome() {
 					<MaterialIcons name="settings" size={22} color={theme.icon.secondary} />
 				</Pressable>
 			</View>
+			)}
 
 			<Sheet
-				peekHeight={330}
+				peekHeight={PEEK}
+				miniHeight={MINI}
+				position={sheetPos}
+				onPositionChange={setSheetPos}
 				head={
+					selected ? (
+						<VehicleSheetHead
+							vehicle={selected}
+							degraded={degraded}
+							onOpenDriver={() => setDriverOpen(true)}
+						/>
+					) : (
 					<View className="gap-3 pb-3">
 						<View className="gap-[3px]">
 							<Txt variant="headingM">
@@ -270,7 +387,9 @@ export default function MapHome() {
 									? copy.common.loading
 									: destination
 										? copy.search.resultsTitle(shownVehicles.length, destination.name)
-										: copy.mapHome.activeCount(shownVehicles.length)}
+										: filtering
+											? copy.mapHome.filteredCount(shownVehicles.length)
+											: copy.mapHome.activeCount(shownVehicles.length)}
 							</Txt>
 							<Txt variant="caption" className="text-fg-secondary">
 								{destination
@@ -281,7 +400,17 @@ export default function MapHome() {
 							</Txt>
 						</View>
 
-						<View className="flex-row flex-wrap gap-2">
+						{/* One row that scrolls, not two that wrap. Five chips wrapped to
+						    a second line and took 46dp out of the peek, which is what
+						    cut the first vehicle card in half — through its capacity
+						    badge, the one thing a commuter reads before deciding to run
+						    for it. The sheet's own pan gives up on a horizontal drag
+						    (failOffsetX), so this scrolls without fighting it. */}
+						<ScrollView
+							horizontal
+							showsHorizontalScrollIndicator={false}
+							contentContainerClassName="gap-2 pr-6"
+						>
 							{copy.mapHome.filters.map(f => (
 								<Chip
 									key={f.key}
@@ -290,36 +419,32 @@ export default function MapHome() {
 									onPress={() => setVehicleFilter(f.key)}
 								/>
 							))}
-						</View>
+						</ScrollView>
 
-						{/* Distance. Its own row, because it answers a different
-						    question from the type chips — not WHAT is out there
-						    but what can actually reach me. Until the location
-						    toggle is on there is nothing to measure from, so the
-						    row is a single chip that turns it on; "within 3 km"
-						    of nowhere is not a filter.
-
-						    Three chips, no "any": a fourth wrapped the row onto a
-						    second line on a 360dp screen. Tapping the active chip
-						    again clears the limit — nothing selected IS "any". */}
-						<View className="flex-row flex-wrap gap-2">
-							{located ? (
-								[1, 3, 5].map(km => (
-									<Chip
-										key={km}
-										label={copy.mapHome.radius.km(km)}
-										active={radiusKm === km}
-										onPress={() => setRadiusKm(radiusKm === km ? null : km)}
-									/>
-								))
-							) : (
-								<Chip label={copy.mapHome.radius.nearMe} active={false} onPress={enableMyLocation} />
-							)}
-						</View>
 					</View>
+					)
 				}
 			>
-				{allStale && (
+				{selected ? (
+					<ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="pb-10">
+						<VehicleSheetBody vehicle={selected} degraded={degraded} />
+					</ScrollView>
+				) : (
+				<>
+				{/* The empty state already tells a commuter the request failed. With
+				    cards on screen nothing did: every poll could reject for ten
+				    minutes while the header still said twelve are active now and
+				    every card kept its LIVE pill and its street name. The banner is
+				    the one place that can say the list has stopped moving. */}
+				{error && vehicles.length > 0 ? (
+					<View className="mb-3 flex-row items-center gap-3 rounded-lg bg-capacity-stale-bg p-3">
+						<MaterialIcons name="wifi-off" size={20} color={theme.capacity.stale.fg} />
+						<View className="min-w-0 flex-1">
+							<Txt variant="bodyMStrong" className="text-capacity-stale-fg">{copy.search.offlineTitle}</Txt>
+							<Txt variant="caption" className="text-fg-secondary">{copy.search.offlineBody}</Txt>
+						</View>
+					</View>
+				) : allStale ? (
 					<View className="mb-3 flex-row items-center gap-3 rounded-lg bg-capacity-stale-bg p-3">
 						<MaterialIcons name="signal-wifi-statusbar-null" size={20} color={theme.capacity.stale.fg} />
 						<View className="min-w-0 flex-1">
@@ -327,7 +452,7 @@ export default function MapHome() {
 							<Txt variant="caption" className="text-fg-secondary">{copy.vehicle.staleBody}</Txt>
 						</View>
 					</View>
-				)}
+				) : null}
 
 				<ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-[10px] pb-8">
 					{awaitingFirstReply ? (
@@ -381,7 +506,11 @@ export default function MapHome() {
 						))
 					)}
 				</ScrollView>
+				</>
+				)}
 			</Sheet>
+
+			<DriverSheet vehicle={selected} visible={driverOpen} onClose={() => setDriverOpen(false)} />
 		</View>
 	)
 }

@@ -5,7 +5,7 @@ module.exports = ({ config }) => ({
 	name: 'Biyahero',
 	slug: 'biyahero',
 	scheme: 'biyahero',
-	version: '1.0.9',
+	version: '1.0.14',
 	orientation: 'portrait',
 	icon: './src/assets/icon.png',
 	userInterfaceStyle: 'light',

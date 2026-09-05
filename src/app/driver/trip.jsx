@@ -19,13 +19,16 @@ import { useCopy } from '@/constants/copy'
 import { resetTo } from '@/services/nav'
 
 /**
- * How much of the screen the sheet keeps at rest, in dp: the heading, the
- * capacity chips and the End button. The map gets the rest. At 500 the map
- * was a letterbox above a sheet, the control column and the LIVE banner
- * were fighting for what was left, and the camera — aimed at the middle of
- * the whole screen — kept the vehicle behind the sheet.
+ * How much of the screen the sheet keeps at rest, in dp: the heading, how many
+ * commuters are watching, the capacity chips and the End button. The map gets
+ * the rest. At 500 the map was a letterbox above a sheet, the control column
+ * and the LIVE banner were fighting for what was left, and the camera — aimed
+ * at the middle of the whole screen — kept the vehicle behind the sheet.
+ *
+ * The note under the End button is the one thing allowed to fall below the
+ * fold: it explains a button that is already labelled.
  */
-const PEEK = 300
+const PEEK = 348
 
 /**
  * 17 · Active Trip. While this screen is open the vehicle is broadcasting and
@@ -192,6 +195,9 @@ export default function ActiveTrip() {
 				}
 				controlsBottom={PEEK + 16}
 				bottomInset={PEEK}
+				// mapPadding already places the vehicle in the visible band; biasing
+				// on top of it would shift the camera twice.
+				centerBias={0}
 			/>
 
 			{/* The banner is a factual claim about the watcher, not about the
@@ -241,34 +247,70 @@ export default function ActiveTrip() {
 			<Sheet
 				peekHeight={PEEK}
 				head={
-					<View className="flex-row items-start justify-between gap-3 pb-3 pt-1">
-						<View className="min-w-0 flex-1 gap-[2px]">
-							{/* Two lines at Heading/M, not one at Heading/L: beside the
-							    "Change" pill, "Bound for SM City Tarlac" was reaching
-							    the screen as "Bound for SM City T…" — the one fact the
-							    heading exists to state was the part cut off. */}
-							<Txt variant="headingM" numberOfLines={2}>{copy.activeTrip.heading(trip.destination)}</Txt>
-							<Txt variant="caption" className="text-fg-secondary">
-								{copy.activeTrip.elapsed(elapsed, (trip.distance_km ?? 0).toFixed(1))}
-							</Txt>
+					<View className="gap-3 pb-3 pt-1">
+						<View className="flex-row items-start justify-between gap-3">
+							<View className="min-w-0 flex-1 gap-[2px]">
+								{/* Two lines at Heading/M, not one at Heading/L: beside the
+								    "Change" pill, "Bound for SM City Tarlac" was reaching
+								    the screen as "Bound for SM City T…" — the one fact the
+								    heading exists to state was the part cut off. */}
+								<Txt variant="headingM" numberOfLines={2}>{copy.activeTrip.heading(trip.destination)}</Txt>
+								<Txt variant="caption" className="text-fg-secondary">
+									{copy.activeTrip.elapsed(elapsed, (trip.distance_km ?? 0).toFixed(1))}
+								</Txt>
+							</View>
+							<Pressable
+								onPress={() => {
+									beginReroute()
+									router.push('/driver/start')
+								}}
+								accessibilityRole="button"
+								className="rounded-full border-[1.5px] border-line-subtle bg-surface px-4 py-2 active:opacity-80"
+							>
+								<Txt variant="bodyMStrong" className="text-fg-secondary">{copy.activeTrip.change}</Txt>
+							</Pressable>
 						</View>
-						<Pressable
-							onPress={() => {
-								beginReroute()
-								router.push('/driver/start')
-							}}
-							accessibilityRole="button"
-							className="rounded-full border-[1.5px] border-line-subtle bg-surface px-4 py-2 active:opacity-80"
-						>
-							<Txt variant="bodyMStrong" className="text-fg-secondary">{copy.activeTrip.change}</Txt>
-						</Pressable>
+
+						{/* How many people are waiting on this run, in the head — the part
+						    of the sheet that never scrolls away. It lived in the scrolling
+						    body under the capacity and the End button, which put the one
+						    number a driver keeps checking below the fold: the pins were on
+						    the map with nothing on screen to count them. Shown even at
+						    zero, so an empty corner is distinguishable from a feature that
+						    is not working. */}
+						<View className="flex-row items-center gap-3 rounded-lg bg-surface-sunken px-3 py-[10px]">
+							<View className="h-9 w-9 items-center justify-center rounded-full bg-brand-subtle">
+								<MaterialIcons name="person" size={20} color={theme.brand.hover} />
+							</View>
+							<View className="min-w-0 flex-1 gap-[1px]">
+								<Txt variant="bodyMStrong" numberOfLines={1}>
+									{watchers.count ? copy.activeTrip.watchingCount(watchers.count) : copy.activeTrip.watchingNone}
+								</Txt>
+								{/* At zero the title has already said it; a second line
+								    explaining the feature would cost the End button its
+								    place in the peek. */}
+								{watchers.count > 0 && (
+									<Txt variant="caption" numberOfLines={1} className="text-fg-secondary">
+										{!watchers.onRouteCount
+											? copy.activeTrip.watchingNoneOnRoute
+											: [
+													copy.activeTrip.watchingOnRoute(watchers.onRouteCount),
+													// Without a fix there is no honest distance, but "2 nasa
+													// ruta mo" is still true and still worth saying.
+													watchers.nearestM == null
+														? copy.activeTrip.watchingNoFix
+														: copy.activeTrip.watchingNearest(watchers.nearestM)
+												].join(' · ')}
+									</Txt>
+								)}
+							</View>
+						</View>
 					</View>
 				}
 			>
 				<ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="pb-6 gap-6">
-					{/* What the driver touches while moving sits in the peek: the
-					    capacity, then the way out. The watcher strip waits under
-					    the fold, where a drag finds it. */}
+					{/* What the driver touches while moving, in the order they touch
+					    it: how full the jeepney is, then the way out. */}
 					<View className="gap-3">
 						<Txt variant="labelS" className="text-fg-secondary">{copy.activeTrip.capacityPrompt}</Txt>
 						<CapacityPicker value={trip.capacity} onChange={setCapacity} />
@@ -277,33 +319,6 @@ export default function ActiveTrip() {
 					<View className="gap-3">
 						<Button label={copy.activeTrip.end} tone="danger" onPress={finish} />
 						<Txt variant="caption" className="text-center text-fg-secondary">{copy.activeTrip.endNote}</Txt>
-					</View>
-
-					{/* Shown even at zero: a driver seeing no pins must be able to
-					    tell an empty corner from a feature that is broken. */}
-					<View className="flex-row items-center gap-[14px] rounded-lg bg-surface-sunken p-[14px]">
-						<View className="h-11 w-11 items-center justify-center rounded-full bg-brand-subtle">
-							<MaterialIcons name="person" size={22} color={theme.brand.hover} />
-						</View>
-						<View className="min-w-0 flex-1 gap-[2px]">
-							<Txt variant="bodyMStrong">
-								{watchers.count ? copy.activeTrip.watchingCount(watchers.count) : copy.activeTrip.watchingNone}
-							</Txt>
-							<Txt variant="caption" className="text-fg-secondary">
-								{!watchers.count
-									? copy.activeTrip.watchingNoneBody
-									: !watchers.onRouteCount
-										? copy.activeTrip.watchingNoneOnRoute
-										: [
-												copy.activeTrip.watchingOnRoute(watchers.onRouteCount),
-												// Without a fix there is no honest distance, but "2 nasa
-												// ruta mo" is still true and still worth saying.
-												watchers.nearestM == null
-													? copy.activeTrip.watchingNoFix
-													: copy.activeTrip.watchingNearest(watchers.nearestM)
-											].join(' · ')}
-							</Txt>
-						</View>
 					</View>
 				</ScrollView>
 			</Sheet>

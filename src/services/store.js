@@ -106,11 +106,17 @@ const startBroadcastWatcher = (tripId, get, set) => {
 
 			api.pingTrip(tripId, { latitude, longitude, street, distanceKm: Number(travelledKm.toFixed(2)) }).catch(e => {
 				// 422: the run was ended server-side (a reviewer, a second device);
-				// 403: the driver is no longer approved. Either way there is no run
+				// 403: the driver is no longer approved; 404: the trip row is not
+				// there at all — the demo backend runs on an ephemeral disk and a
+				// restart takes the whole run with it. Either way there is no run
 				// to broadcast for, and the banner stayed LIVE while every ping was
-				// refused. Network failures are left alone — the next fix retries.
+				// refused: the driver believed commuters could see them while they
+				// were not in the fleet list at all. endTrip already treats a 404 as
+				// the server confirming the run is gone; this is the same fact
+				// arriving from the other direction.
+				// Network failures are left alone — the next fix retries.
 				const status = e?.response?.status
-				if (status !== 422 && status !== 403) return
+				if (status !== 422 && status !== 403 && status !== 404) return
 
 				get().stopBroadcast()
 				set({ trip: null, isBroadcasting: false })

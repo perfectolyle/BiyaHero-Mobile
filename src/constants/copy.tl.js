@@ -71,6 +71,9 @@ export const mapHome = {
 	searchPlaceholder: 'Saan ka pupunta?',
 	/** Count is injected: "12 sasakyan aktibo ngayon". */
 	activeCount: n => `${n} sasakyan aktibo ngayon`,
+	// Kapag may filter, ang bilang ay hindi na tungkol sa kalsada: "0 sasakyan
+	// aktibo ngayon" habang may labing-siyam na dumadaan sa kanto.
+	filteredCount: n => `${n} ang tugma sa filter mo`,
 	updateNote: 'Nag-a-update kada 8 segundo · walang location permission',
 	updateNoteLocated: 'Nag-a-update kada 8 segundo · ipinapakita ang lokasyon mo',
 	myLocation: 'Ipakita ang lokasyon ko',

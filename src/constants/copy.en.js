@@ -70,6 +70,9 @@ export const settings = {
 export const mapHome = {
 	searchPlaceholder: 'Where are you going?',
 	activeCount: n => `${n} vehicle${n === 1 ? '' : 's'} active now`,
+	// With a filter on, the plain count is a claim about the road that is not
+	// true: "0 vehicles active now" while nineteen jeepneys pass the corner.
+	filteredCount: n => `${n} match your filters`,
 	updateNote: 'Updates every 8 seconds · no location permission',
 	updateNoteLocated: 'Updates every 8 seconds · showing your location',
 	myLocation: 'Show my location',

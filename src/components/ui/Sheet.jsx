@@ -1,49 +1,101 @@
-import { useMemo } from 'react'
-import { View, useWindowDimensions } from 'react-native'
+import { useEffect, useMemo } from 'react'
+import { View, Pressable, useWindowDimensions } from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { MaterialIcons } from '@expo/vector-icons'
 import { elevation } from '@/theme/tokens'
+import { useTheme } from '@/theme/useTheme'
 
 const SPRING = { damping: 20, stiffness: 180, mass: 0.6 }
 
 /**
- * Two-position bottom sheet. Peek shows the count, the filters and the first
- * card; dragging up reveals the full list ("I-swipe pataas ang sheet para sa
- * buong listahan"). Built on the Reanimated already in the project rather than
- * pulling in a sheet library for two snap points.
+ * How far a fling carries. The finger leaves the glass at a velocity, and the
+ * stop it was heading for matters more than the one it happens to be over —
+ * without this a decisive flick that only travelled 30dp snaps straight back.
  */
-export const Sheet = ({ children, head = null, peekHeight = 320, heightRatio = 0.86, onExpandedChange }) => {
+const FLING_LOOKAHEAD = 0.14
+
+/**
+ * Bottom sheet with three positions: full, peek, and — when `miniHeight` is
+ * given — mini, a band just tall enough to grab, so the map can have nearly the
+ * whole screen. The mini stop shows a chevron, because a sheet that has shrunk
+ * to a grabber has to say that there is something above it.
+ *
+ * `position` drives it from outside ('full' | 'peek' | 'mini'); every drag
+ * reports where it landed through `onPositionChange`, so the caller's state and
+ * the sheet cannot disagree.
+ */
+export const Sheet = ({
+	children,
+	head = null,
+	peekHeight = 320,
+	// 0 disables the third stop, and the sheet behaves as it always did.
+	miniHeight = 0,
+	heightRatio = 0.86,
+	position = null,
+	onPositionChange,
+	onExpandedChange
+}) => {
 	const { height: screenHeight } = useWindowDimensions()
 	const insets = useSafeAreaInsets()
+	const { theme } = useTheme()
 
 	const sheetHeight = Math.round(screenHeight * heightRatio)
-	const collapsed = Math.max(0, sheetHeight - peekHeight)
+	const yFull = 0
+	const yPeek = Math.max(0, sheetHeight - peekHeight)
+	const yMini = miniHeight > 0 ? Math.max(yPeek, sheetHeight - miniHeight) : yPeek
+	const lowest = yMini
 
-	const translateY = useSharedValue(collapsed)
-	const startY = useSharedValue(collapsed)
+	const translateY = useSharedValue(yPeek)
+	const startY = useSharedValue(yPeek)
+
+	const yFor = name => (name === 'full' ? yFull : name === 'mini' ? yMini : yPeek)
+
+	// Driven from outside: selecting a vehicle opens the sheet to its peek, and
+	// closing it puts it back. Without this the caller could believe the sheet
+	// is open while it sits collapsed under the map.
+	useEffect(() => {
+		if (!position) return
+		translateY.value = withSpring(yFor(position), SPRING)
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [position, yPeek, yMini])
+
+	const settle = name => {
+		onPositionChange?.(name)
+		// Kept for callers that only care about the one bit.
+		onExpandedChange?.(name === 'full')
+	}
 
 	const pan = useMemo(
 		() =>
 			Gesture.Pan()
 				// The head band holds tappable chips: only a clearly vertical drag
 				// may claim the touch, or a sloppy tap twitches the sheet instead
-				// of applying the filter.
+				// of applying the filter. It also lets a horizontal row inside the
+				// head scroll without the sheet stealing the gesture.
 				.activeOffsetY([-10, 10])
 				.failOffsetX([-15, 15])
 				.onStart(() => {
 					startY.value = translateY.value
 				})
 				.onUpdate(event => {
-					translateY.value = Math.min(collapsed, Math.max(0, startY.value + event.translationY))
+					translateY.value = Math.min(lowest, Math.max(yFull, startY.value + event.translationY))
 				})
 				.onEnd(event => {
-					// Velocity wins over position: a decisive flick snaps even from mid-travel.
-					const expand = event.velocityY < -400 || (event.velocityY < 400 && translateY.value < collapsed / 2)
-					translateY.value = withSpring(expand ? 0 : collapsed, SPRING)
-					if (onExpandedChange) runOnJS(onExpandedChange)(expand)
+					// Where the finger was heading, not where it stopped.
+					const projected = translateY.value + event.velocityY * FLING_LOOKAHEAD
+					const stops = miniHeight > 0 ? [yFull, yPeek, yMini] : [yFull, yPeek]
+
+					let best = stops[0]
+					for (let i = 1; i < stops.length; i++) {
+						if (Math.abs(stops[i] - projected) < Math.abs(best - projected)) best = stops[i]
+					}
+
+					translateY.value = withSpring(best, SPRING)
+					runOnJS(settle)(best === yFull ? 'full' : best === yMini && miniHeight > 0 ? 'mini' : 'peek')
 				}),
-		[collapsed, onExpandedChange]
+		[yFull, yPeek, yMini, lowest, miniHeight, onPositionChange, onExpandedChange]
 	)
 
 	const style = useAnimatedStyle(() => ({ transform: [{ translateY: translateY.value }] }))
@@ -62,9 +114,23 @@ export const Sheet = ({ children, head = null, peekHeight = 320, heightRatio = 0
 			    alone is a target nobody hits. Pass the static header as `head`. */}
 			<GestureDetector gesture={pan}>
 				<View>
-					<View className="items-center pb-1 pt-[10px]">
+					<Pressable
+						// A tap on the grabber is the same intent as a drag up, and it
+						// is the only affordance a collapsed sheet has left.
+						onPress={() => {
+							const next = translateY.value > (yPeek + yMini) / 2 ? 'peek' : translateY.value > yPeek / 2 ? 'full' : 'peek'
+							translateY.value = withSpring(yFor(next), SPRING)
+							settle(next)
+						}}
+						accessibilityRole="button"
+						hitSlop={10}
+						className="items-center pb-1 pt-[10px]"
+					>
+						{miniHeight > 0 && (
+							<MaterialIcons name="keyboard-arrow-up" size={18} color={theme.icon.muted} style={{ marginBottom: -4 }} />
+						)}
 						<View className="h-[5px] w-10 rounded-[3px] bg-line" />
-					</View>
+					</Pressable>
 					{!!head && <View className="px-6">{head}</View>}
 				</View>
 			</GestureDetector>
