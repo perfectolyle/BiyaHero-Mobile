@@ -20,7 +20,7 @@ import { useCopy } from '@/constants/copy'
  * `renderIcon` is optional; the vehicle picker uses it to keep the glyph that
  * made the tiles readable at a glance.
  */
-export const Select = ({ label, value, options, onChange, renderIcon, hint, className = '' }) => {
+export const Select = ({ label, value, options, onChange, renderIcon, hint, required = false, className = '' }) => {
 	const { theme } = useTheme()
 	const copy = useCopy()
 	const [open, setOpen] = useState(false)
@@ -29,7 +29,12 @@ export const Select = ({ label, value, options, onChange, renderIcon, hint, clas
 
 	return (
 		<View className={`gap-2 ${className}`}>
-			{!!label && <Txt variant="labelS" className="text-fg-secondary">{label}</Txt>}
+			{!!label && (
+				<Txt variant="labelS" className="text-fg-secondary">
+					{label}
+					{required && <Txt variant="labelS" className="text-fg-danger"> *</Txt>}
+				</Txt>
+			)}
 
 			<Pressable
 				onPress={() => setOpen(true)}

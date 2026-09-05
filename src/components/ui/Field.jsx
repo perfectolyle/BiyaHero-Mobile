@@ -7,12 +7,17 @@ import { useTheme } from '@/theme/useTheme'
  * Labelled input. `prefix` carries the fixed +63 on the sign-up screen;
  * `mono` switches to JetBrains for plate numbers, which scan faster in mono.
  */
-export const Field = ({ label, error, prefix, mono = false, hint, className = '', ...input }) => {
+export const Field = ({ label, error, prefix, mono = false, hint, required = false, className = '', ...input }) => {
 	const { theme } = useTheme()
 
 	return (
 	<View className={`gap-2 ${className}`}>
-		{!!label && <Txt variant="labelS" className="text-fg-secondary">{label}</Txt>}
+		{!!label && (
+			<Txt variant="labelS" className="text-fg-secondary">
+				{label}
+				{required && <Txt variant="labelS" className="text-fg-danger"> *</Txt>}
+			</Txt>
+		)}
 		<View
 			className={`h-14 flex-row items-center gap-2 rounded-lg border-[1.5px] bg-surface px-4 ${
 				error ? 'border-danger' : 'border-line-subtle'

@@ -124,6 +124,7 @@ export default function VehicleDetails() {
 					    glyph is kept, so the type is still readable at a glance. */}
 					<Select
 						label={copy.vehicleDetails.typeLabel}
+						required
 						value={vehicle_type}
 						onChange={value => update({ vehicle_type: value })}
 						options={VEHICLE_TYPES.map(t => ({ value: t, label: VEHICLE_LABELS[t] }))}
@@ -131,7 +132,10 @@ export default function VehicleDetails() {
 					/>
 
 					<View className="gap-2">
-						<Txt variant="labelS" className="text-fg-secondary">{copy.vehicleDetails.photoLabel}</Txt>
+						<Txt variant="labelS" className="text-fg-secondary">
+							{copy.vehicleDetails.photoLabel}
+							<Txt variant="labelS" className="text-fg-danger"> *</Txt>
+						</Txt>
 
 						{/* A thumbnail in a row the same height as the two buttons it
 						    replaces. A full-width preview grew this step by 64dp the
@@ -187,15 +191,16 @@ export default function VehicleDetails() {
 							</View>
 						)}
 
-						{/* The photo is the one requirement a driver would not guess:
-						    it used to be optional, and nothing else on this step says
-						    so. Every other unmarked field is required by the same
-						    convention; the optional ones say so on their label. */}
+						{/* Required fields carry a red asterisk, so the note no longer
+						    has to spend its first word saying so — it can say the thing
+						    a driver would not guess instead: the photo, not the plate,
+						    is what a commuter matches from a corner. */}
 						<Txt variant="caption" className="text-fg-secondary">{copy.vehicleDetails.photoNote}</Txt>
 					</View>
 
 					<Field
 						label={copy.vehicleDetails.plateLabel}
+						required
 						placeholder={copy.vehicleDetails.platePlaceholder}
 						value={plate_number}
 						onChangeText={value => update({ plate_number: value.toUpperCase() })}
