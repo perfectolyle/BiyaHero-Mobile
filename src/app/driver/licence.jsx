@@ -109,6 +109,7 @@ export default function LicenceCapture() {
 		if (!LICENCE_PATTERN.test(draft.license_no.trim().toUpperCase())) return (setErrorField('license_no'), setError(copy.licence.invalidNumber))
 		if (!EXPIRY_PATTERN.test(draft.license_expires_at.trim())) return (setErrorField('license_expires_at'), setError(copy.licence.invalidExpiry))
 		if (new Date(draft.license_expires_at.trim()) <= new Date()) return (setErrorField('license_expires_at'), setError(copy.licence.expiredLicence))
+		if (draft.password.length < 8) return (setErrorField('password'), setError(copy.licence.invalidPassword))
 		setError(null)
 
 		try {
@@ -121,6 +122,10 @@ export default function LicenceCapture() {
 				body_number: draft.body_number.trim(),
 				license_no: draft.license_no.trim(),
 				license_expires_at: draft.license_expires_at.trim(),
+				// Not trimmed. A space is a legitimate character in a password,
+				// and quietly eating one would lock the driver out on the very
+				// next login with no way to work out why.
+				password: draft.password,
 				licencePhotoUri: draft.licencePhotoUri,
 				// Picked back on the vehicle step, and optional there.
 				vehiclePhotoUri: draft.vehiclePhotoUri
@@ -229,6 +234,22 @@ export default function LicenceCapture() {
 								minimumDate={new Date(Date.now() + 86_400_000)}
 								error={errorField === 'license_expires_at' ? error : null}
 							/>
+							{/* Last, because it is the only field on this screen
+							    that is not copied off the card in front of them:
+							    everything above is transcription, this one is a
+							    decision. */}
+							<Field
+								label={copy.licence.passwordLabel}
+								placeholder={copy.licence.passwordPlaceholder}
+								value={draft.password}
+								onChangeText={value => update({ password: value })}
+								secureTextEntry
+								autoCapitalize="none"
+								autoCorrect={false}
+								textContentType="newPassword"
+								error={errorField === 'password' ? error : null}
+								hint={copy.licence.passwordNote}
+							/>
 						</View>
 					)}
 
@@ -239,7 +260,7 @@ export default function LicenceCapture() {
 							label={copy.licence.submit}
 							onPress={submit}
 							loading={registering}
-							disabled={!draft.licencePhotoUri || !draft.name.trim() || !draft.license_no.trim() || !draft.license_expires_at.trim()}
+							disabled={!draft.licencePhotoUri || !draft.name.trim() || !draft.license_no.trim() || !draft.license_expires_at.trim() || draft.password.length < 8}
 						/>
 						<View className="flex-row items-start gap-2">
 							<MaterialIcons name="info-outline" size={16} color={theme.icon.secondary} />

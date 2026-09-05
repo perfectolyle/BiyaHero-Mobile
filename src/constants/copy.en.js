@@ -185,15 +185,17 @@ export const signUp = {
 export const login = {
 	eyebrow: 'LOG IN',
 	title: 'Log in as a driver',
-	body: "Enter your licence number and your vehicle's plate.",
+	body: 'Enter your licence, plate and password.',
 	licenceLabel: 'LICENCE NUMBER',
 	licencePlaceholder: 'N01-19-123456',
 	plateLabel: 'VEHICLE PLATE',
 	platePlaceholder: 'NCR 8842',
 	submit: 'Log in',
 	noAccount: 'No account yet? Register',
-	notFound: 'Licence and plate do not match.',
-	hint: 'No password and no SMS code.'
+	passwordLabel: 'PASSWORD',
+	passwordPlaceholder: 'Your password',
+	notFound: 'Wrong licence, plate or password.',
+	hint: 'No SMS code — just a password.'
 }
 
 export const vehicleDetails = {
@@ -255,6 +257,15 @@ export const licence = {
 	invalidExpiry: 'Enter the expiry date (YYYY-MM-DD).',
 	expiredLicence: 'Your licence has expired.',
 	invalidNumber: 'Wrong number format. It should look like N01-19-123456.',
+	passwordLabel: 'PASSWORD',
+	passwordPlaceholder: 'At least 8 characters',
+	invalidPassword: 'The password must be at least 8 characters.',
+	/**
+	 * Says the hard part out loud. There is no reset link — a driver has no
+	 * verified email or phone for one to go to — so the eye toggle beside this
+	 * field is the only chance they get to check what they typed.
+	 */
+	passwordNote: 'This is what you will log in with. Remember it — there is no way to reset it.',
 	reviewNote: 'We check the number format and expiry. The photo is kept in case of a dispute.',
 	hashNote: 'Licence: hashed, never displayed.'
 }
@@ -421,5 +432,7 @@ export const common = {
 	retry: 'Try again',
 	loading: 'One moment…',
 	offline: 'No connection',
-	genericError: 'Something went wrong. Try again.'
+	genericError: 'Something went wrong. Try again.',
+	showPassword: 'Show password',
+	hidePassword: 'Hide password'
 }

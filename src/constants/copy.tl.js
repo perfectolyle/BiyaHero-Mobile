@@ -193,21 +193,24 @@ export const signUp = {
 }
 
 /**
- * Returning drivers. Identity is licence + plate: neither is secret alone, but
- * together they are hard to guess and need no SMS.
+ * Returning drivers. Licence + plate say WHICH driver; the password proves it.
+ * The first two are painted on the vehicle and printed on a card, so on their
+ * own they were a credential anyone at a terminal could read.
  */
 export const login = {
 	eyebrow: 'PAG-LOG IN',
 	title: 'Mag-log in bilang drayber',
-	body: 'Ilagay ang numero ng lisensya at plaka ng sasakyan mo.',
+	body: 'Ilagay ang lisensya, plaka, at password mo.',
 	licenceLabel: 'NUMERO NG LISENSYA',
 	licencePlaceholder: 'N01-19-123456',
 	plateLabel: 'PLAKA NG SASAKYAN',
 	platePlaceholder: 'NCR 8842',
 	submit: 'Mag-log in',
 	noAccount: 'Wala pang account? Magparehistro',
-	notFound: 'Hindi tugma ang lisensya at plaka.',
-	hint: 'Walang password at walang SMS code.'
+	passwordLabel: 'PASSWORD',
+	passwordPlaceholder: 'Password mo',
+	notFound: 'Mali ang lisensya, plaka, o password.',
+	hint: 'Walang SMS code — password lang.'
 }
 
 export const vehicleDetails = {
@@ -304,6 +307,15 @@ export const licence = {
 	invalidExpiry: 'Ilagay ang petsa ng expiry (YYYY-MM-DD).',
 	expiredLicence: 'Paso na ang lisensya mo.',
 	invalidNumber: 'Mali ang porma ng numero. Dapat katulad ng N01-19-123456.',
+	passwordLabel: 'PASSWORD',
+	passwordPlaceholder: 'Hindi bababa sa 8 karakter',
+	invalidPassword: 'Dapat 8 karakter pataas ang password.',
+	/**
+	 * Says the hard part out loud. There is no reset link — a driver has no
+	 * verified email or phone for one to go to — so the eye toggle beside this
+	 * field is the only chance they get to check what they typed.
+	 */
+	passwordNote: 'Ito ang gagamitin mo sa pag-log in. Tandaan mo ito — walang paraan para i-reset.',
 	/**
 	 * Deliberately does NOT claim the licence was checked against LTO — there is
 	 * no public API to check it against. It says exactly what happens.
@@ -444,5 +456,7 @@ export const common = {
 	retry: 'Subukan ulit',
 	loading: 'Sandali lang…',
 	offline: 'Walang koneksyon',
-	genericError: 'May naganap na problema. Subukan ulit.'
+	genericError: 'May naganap na problema. Subukan ulit.',
+	showPassword: 'Ipakita ang password',
+	hidePassword: 'Itago ang password'
 }

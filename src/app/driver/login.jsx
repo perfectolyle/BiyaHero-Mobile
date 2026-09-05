@@ -11,12 +11,15 @@ import { useStore } from '@/services/store'
 import { useCopy } from '@/constants/copy'
 
 /**
- * Returning driver. Identity is LICENCE + PLATE — no password, no SMS code.
+ * Returning driver. LICENCE + PLATE say which driver; the PASSWORD proves it.
  *
- * Neither value is secret on its own: the plate is painted on the vehicle and
- * the licence is printed on a card. Together they are hard to guess, which is
- * the trade made to avoid an OTP. Someone who photographs the licence still
- * cannot log in without also knowing the plate.
+ * The first two were once the whole credential, on the theory that the pair was
+ * hard to guess. Guessing was never the threat: the plate is painted on the
+ * side of the vehicle and the licence is handed over at every checkpoint, so
+ * anyone standing at a terminal with a phone camera could collect both and then
+ * broadcast a position under that driver's name. The pair is now the account
+ * name and nothing more. Still no OTP — an SMS gateway is a bill and a
+ * dependency, and a password the driver picks closes the actual hole.
  */
 export default function DriverLogin() {
 	const copy = useCopy()
@@ -25,17 +28,20 @@ export default function DriverLogin() {
 
 	const [licence, setLicence] = useState('')
 	const [plate, setPlate] = useState('')
+	const [password, setPassword] = useState('')
 	const [error, setError] = useState(null)
 	const [busy, setBusy] = useState(false)
 
-	const ready = licence.trim().length >= 9 && plate.trim().length >= 3
+	const ready = licence.trim().length >= 9 && plate.trim().length >= 3 && password.length > 0
 
 	const submit = async () => {
 		setBusy(true)
 		setError(null)
 
 		try {
-			await login({ license_no: licence.trim(), plate_number: plate.trim() })
+			// The password is sent as typed — trimming it here would silently
+			// disagree with what was registered.
+			await login({ license_no: licence.trim(), plate_number: plate.trim(), password })
 			router.replace('/driver')
 		} catch (e) {
 			setError(e?.response?.status === 404 ? copy.login.notFound : copy.common.genericError)
@@ -70,6 +76,23 @@ export default function DriverLogin() {
 						autoCapitalize="characters"
 						autoCorrect={false}
 						mono
+					/>
+
+					{/* The failure message lives on the last field, not the
+					    plate: the server refuses to say which of the three was
+					    wrong, so pinning it under the plate blamed a field that
+					    may well have been right. */}
+					<Field
+						label={copy.login.passwordLabel}
+						placeholder={copy.login.passwordPlaceholder}
+						value={password}
+						onChangeText={setPassword}
+						secureTextEntry
+						autoCapitalize="none"
+						autoCorrect={false}
+						textContentType="password"
+						onSubmitEditing={() => ready && submit()}
+						returnKeyType="go"
 						hint={copy.login.hint}
 						error={error}
 					/>

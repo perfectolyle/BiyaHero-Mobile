@@ -20,6 +20,12 @@ export const useRegistration = create(set => ({
 	body_number: '',
 	license_no: '',
 	license_expires_at: '',
+	/**
+	 * Chosen on the licence step and sent once. Never read back: the server
+	 * stores a hash, and nothing in the app has a reason to hold this after
+	 * the POST — which is also why `reset()` has to clear it.
+	 */
+	password: '',
 	/** Local file URI of the captured licence photo, uploaded on submit. */
 	licencePhotoUri: null,
 	/**
@@ -59,6 +65,7 @@ export const useRegistration = create(set => ({
 			body_number: '',
 			license_no: '',
 			license_expires_at: '',
+			password: '',
 			licencePhotoUri: null
 		})
 }))
