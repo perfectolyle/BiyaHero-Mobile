@@ -1024,8 +1024,11 @@ export const Map = ({
 	useEffect(() => {
 		// A following camera is already committed. Framing the whole route
 		// underneath it zoomed the driver out to the entire corridor for one
-		// frame before the follow snapped them back in.
-		if (follow) return
+		// frame before the follow snapped them back in. But only once it HAS
+		// something to follow: before the first GPS fix the follow has no
+		// position, and skipping the fit then left the driver on an unframed
+		// map with the route somewhere off screen.
+		if (follow && at(legs, followKey, centerOnRef.current)) return
 
 		const points = fitTo?.filter(Boolean)
 
