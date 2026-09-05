@@ -220,6 +220,7 @@ export const vehicleDetails = {
 	photoTake: 'Take one',
 	photoPick: 'Choose',
 	photoRetake: 'Change the photo',
+	photoRemove: 'Remove the photo',
 	photoDenied: 'Camera or gallery permission is needed.',
 	continue: 'Continue',
 	invalidPlate: 'The vehicle plate is required.',

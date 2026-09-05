@@ -234,6 +234,7 @@ export const vehicleDetails = {
 	photoTake: 'Kunan',
 	photoPick: 'Pumili',
 	photoRetake: 'Palitan ang larawan',
+	photoRemove: 'Alisin ang larawan',
 	photoDenied: 'Kailangan ng pahintulot para sa camera o gallery.',
 	continue: 'Magpatuloy',
 	invalidPlate: 'Kailangan ang plaka ng sasakyan.',

@@ -151,22 +151,34 @@ export default function VehicleDetails() {
 						    moment a photo was chosen, which is exactly what pushed the
 						    form into scrolling. */}
 						{vehiclePhotoUri || vehiclePhotoUrl ? (
-							<Pressable
-								onPress={() => pickPhoto(false)}
-								accessibilityRole="button"
-								accessibilityLabel={copy.vehicleDetails.photoRetake}
-								className="h-14 flex-row items-center gap-3 overflow-hidden rounded-lg border-[1.5px] border-line-subtle bg-surface px-2 active:opacity-80"
-							>
-								<Image
-									source={{ uri: vehiclePhotoUri ?? vehiclePhotoUrl }}
-									className="h-10 w-16 rounded"
-									resizeMode="cover"
-								/>
-								<Txt variant="bodyMStrong" numberOfLines={1} className="min-w-0 flex-1">
-									{copy.vehicleDetails.photoRetake}
-								</Txt>
-								<MaterialIcons name="edit" size={18} color={theme.icon.secondary} />
-							</Pressable>
+							<View className="h-14 flex-row items-center gap-2 overflow-hidden rounded-lg border-[1.5px] border-line-subtle bg-surface pl-2 pr-1">
+								{/* Replace and remove are separate targets. With only a
+								    replace row there was no way to undo a wrong picture
+								    except by choosing another one. */}
+								<Pressable
+									onPress={() => pickPhoto(false)}
+									accessibilityRole="button"
+									accessibilityLabel={copy.vehicleDetails.photoRetake}
+									className="h-full min-w-0 flex-1 flex-row items-center gap-3 active:opacity-70"
+								>
+									<Image
+										source={{ uri: vehiclePhotoUri ?? vehiclePhotoUrl }}
+										className="h-10 w-16 rounded"
+										resizeMode="cover"
+									/>
+									<Txt variant="bodyMStrong" numberOfLines={1} className="min-w-0 flex-1">
+										{copy.vehicleDetails.photoRetake}
+									</Txt>
+								</Pressable>
+								<Pressable
+									onPress={() => update({ vehiclePhotoUri: null, vehiclePhotoUrl: null })}
+									accessibilityRole="button"
+									accessibilityLabel={copy.vehicleDetails.photoRemove}
+									className="h-12 w-12 items-center justify-center rounded-lg active:opacity-70"
+								>
+									<MaterialIcons name="close" size={20} color={theme.icon.secondary} />
+								</Pressable>
+							</View>
 						) : (
 							<View className="flex-row gap-3">
 								<Pressable
