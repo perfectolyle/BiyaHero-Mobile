@@ -150,7 +150,9 @@ export default function VerificationPending() {
 					{!approved && !rejected && (
 						<Button label={copy.pending.refresh} tone="secondary" icon="refresh" onPress={refreshMe} loading={checking} />
 					)}
-					<Button label={copy.pending.useAsCommuter} tone="ghost" onPress={useAsCommuter} />
+					{/* The rejected state already offers this as its primary action
+					    above; a second, identical button under it read as a mistake. */}
+					{!rejected && <Button label={copy.pending.useAsCommuter} tone="ghost" onPress={useAsCommuter} />}
 					<Txt variant="caption" className="text-center text-fg-secondary">{copy.pending.footnote}</Txt>
 				</View>
 			</ScrollView>

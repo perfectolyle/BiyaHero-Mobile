@@ -92,8 +92,11 @@ export default function VehicleDetails() {
 				body_number: body_number.trim() || undefined,
 				vehiclePhotoUri
 			})
-			await refreshMe()
-			showToast(copy.vehicleDetails.saved)
+			// refreshMe() returns null rather than throwing when /me fails, so the
+			// save had gone through but the profile underneath still showed the old
+			// vehicle — and the toast said everything was fine.
+			const me = await refreshMe()
+			showToast(me ? copy.vehicleDetails.saved : copy.common.offline)
 			router.back()
 		} catch {
 			showToast(copy.common.genericError)

@@ -374,6 +374,10 @@ export const rerouteTrip = (tripId, destination, { routeId, position, destCoords
 	client
 		.patch(`/trips/${tripId}/route`, {
 			destination,
+			// The roads the driver traced. startTrip sent them; this did not, so a
+			// mid-trip reroute quietly threw away what the driver had just drawn
+			// and built the corridor from endpoints alone.
+			...viaPayload(via),
 			...(routeId ? { route_id: routeId } : {}),
 			...(position ? { lat: position.latitude, lng: position.longitude } : {}),
 			...(destCoords ? { dest_lat: destCoords.latitude, dest_lng: destCoords.longitude } : {})

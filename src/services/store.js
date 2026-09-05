@@ -13,6 +13,10 @@ const KEYS = { role: 'biyahero.role', token: 'biyahero.token', driver: 'biyahero
 const MAX_RECENT = 3
 
 let pollTimer = null
+/** The enableMyLocation call in flight, so a second tap joins it instead of starting another. */
+let enablingLocation = null
+/** Bumped on logout, so a session refresh that was already in flight cannot write the old driver back. */
+let sessionSeq = 0
 /** The simulator's one-frame-per-tick channel; real drivers still send vehicle.moved. */
 let fleetBatchSocket = null
 /** Unsubscribe for the socket up/down listener that sets the poll cadence. */
@@ -100,7 +104,18 @@ const startBroadcastWatcher = (tripId, get, set) => {
 				}
 			}
 
-			api.pingTrip(tripId, { latitude, longitude, street, distanceKm: Number(travelledKm.toFixed(2)) }).catch(() => {})
+			api.pingTrip(tripId, { latitude, longitude, street, distanceKm: Number(travelledKm.toFixed(2)) }).catch(e => {
+				// 422: the run was ended server-side (a reviewer, a second device);
+				// 403: the driver is no longer approved. Either way there is no run
+				// to broadcast for, and the banner stayed LIVE while every ping was
+				// refused. Network failures are left alone — the next fix retries.
+				const status = e?.response?.status
+				if (status !== 422 && status !== 403) return
+
+				get().stopBroadcast()
+				set({ trip: null, isBroadcasting: false })
+				get().showToast(getCopy().vehicle.tripEndedTitle)
+			})
 		}
 	)
 }
@@ -162,6 +177,15 @@ export const useStore = create((set, get) => ({
 		// only control that says somebody can see you, so the consent goes too.
 		if (role !== 'commuter') get().stopWatchingTrip()
 
+		// Leaving driver mode with a run open: the GPS broadcast had no control
+		// or indicator on the commuter side, so it kept running — and draining
+		// the battery — behind a map that never mentioned it. The run stays
+		// open on the server; resumeSession restarts the broadcast when the
+		// driver comes back. Leaving commuter mode, the blue dot goes for the
+		// same reason.
+		if (role !== 'driver') get().stopBroadcast()
+		if (role !== 'commuter' && get().myLocationOn) get().disableMyLocation()
+
 		set({ role })
 		await AsyncStorage.setItem(KEYS.role, role)
 	},
@@ -202,8 +226,13 @@ export const useStore = create((set, get) => ({
 	 * if the process died mid-trip.
 	 */
 	resumeSession: async () => {
+		// hydrate() fires this without awaiting it. If the driver logs out while
+		// /me is still on the wire, the reply must not put them back.
+		const session = sessionSeq
+
 		try {
 			const driver = await api.fetchMe()
+			if (session !== sessionSeq) return
 			set({ driver })
 			await AsyncStorage.setItem(KEYS.driver, JSON.stringify(driver))
 
@@ -257,6 +286,12 @@ export const useStore = create((set, get) => ({
 	destinationResolved: true,
 	vehicleFilter: 'all',
 	/**
+	 * Whether the listing has answered at least once for the CURRENT
+	 * destination. Until it has, an empty fleet is "still loading", not "nobody
+	 * is driving"; after it has, silence between polls is not loading at all.
+	 */
+	hasReplied: false,
+	/**
 	 * Only vehicles within this many km of the commuter — null for no limit.
 	 * Applied on the phone, never sent: the server does not learn the commuter's
 	 * position from a filter any more than from a listing.
@@ -272,13 +307,16 @@ export const useStore = create((set, get) => ({
 	},
 
 	setDestination: async destination => {
-		set({ destination, selectedVehicleId: null })
+		// The old fleet goes with the old destination. Left in place, the
+		// header, the cards and the map framing described the previous list
+		// under the new place's name until the filtered reply landed.
+		set({ destination, selectedVehicleId: null, vehicles: [], hasReplied: false })
 		if (destination) await get().rememberSearch(destination)
 		get().refresh()
 	},
 
 	clearDestination: () => {
-		set({ destination: null, selectedVehicleId: null })
+		set({ destination: null, selectedVehicleId: null, vehicles: [], hasReplied: false })
 		get().refresh()
 	},
 
@@ -330,13 +368,17 @@ export const useStore = create((set, get) => ({
 				// The server says outright when it could not locate the place; saying
 				// "no rides pass there" instead would blame the fleet for a typo.
 				destinationResolved: meta.resolved !== false,
+				hasReplied: true,
 				error: null
 			})
 			get().checkProximity()
 		} catch {
-			set({ error: getCopy().common.offline })
+			// Only the NEWEST request gets to say the network failed: an older,
+			// slower one rejecting after a newer one succeeded was flipping a
+			// legitimately empty result to "Walang koneksyon".
+			if (seq === refreshSeq) set({ error: getCopy().common.offline })
 		} finally {
-			set({ loading: false })
+			if (seq === refreshSeq) set({ loading: false })
 		}
 	},
 
@@ -347,10 +389,26 @@ export const useStore = create((set, get) => ({
 	 * commuter switched it on for.
 	 */
 	enableMyLocation: async () => {
-		// A second tap while the first is still resolving would leave an
-		// orphaned watcher writing myLocation forever.
 		if (myLocationWatcher) return true
 
+		// One enable in flight at a time. The watcher guard above only holds
+		// once the watcher EXISTS, which is four awaits in — a second tap on the
+		// crosshair, the "Malapit sa akin" chip or the watch toggle before then
+		// ran the whole body again and left an orphaned watcher writing
+		// myLocation forever. Callers share the same promise instead.
+		if (enablingLocation) return enablingLocation
+
+		enablingLocation = get()
+			.enableMyLocationNow()
+			.finally(() => {
+				enablingLocation = null
+			})
+
+		return enablingLocation
+	},
+
+	/** The body of enableMyLocation — reached only through it. */
+	enableMyLocationNow: async () => {
 		const servicesOn = await Location.hasServicesEnabledAsync().catch(() => false)
 		if (!servicesOn) {
 			get().showToast(getCopy().mapHome.locationServicesOff)
@@ -367,7 +425,10 @@ export const useStore = create((set, get) => ({
 		get().showToast(getCopy().mapHome.myLocationOn)
 
 		const apply = coords => {
-			if (!coords) return
+			// Switched off while a fix was still on its way: the fix is not
+			// wanted. Writing it anyway drew the blue dot with the toggle OFF,
+			// and there was then no control left to make it go away.
+			if (!coords || !get().myLocationOn) return
 			set({ myLocation: { latitude: coords.latitude, longitude: coords.longitude } })
 			get().checkProximity()
 		}
@@ -398,6 +459,15 @@ export const useStore = create((set, get) => ({
 				{ accuracy: Location.Accuracy.High, timeInterval: FIX_INTERVAL_MS, distanceInterval: 3 },
 				loc => apply(loc?.coords)
 			)
+
+			// disableMyLocation ran while the fix was resolving: it found no
+			// watcher to remove then, so this one is removed now, or it runs
+			// forever with the toggle off.
+			if (!get().myLocationOn) {
+				myLocationWatcher.remove()
+				myLocationWatcher = null
+				return false
+			}
 		} catch (e) {
 			// Surfacing beats a silently empty map — this is why the dot exists.
 			// Clear the seed fix too: a lingering myLocation with the toggle off
@@ -768,6 +838,15 @@ export const useStore = create((set, get) => ({
 	},
 
 	logout: async () => {
+		// A run left open by a driver who signed out kept them on every
+		// commuter map with nobody broadcasting for it; the driver saw nothing,
+		// because the store had already forgotten the trip. End it first.
+		const { trip } = get()
+		if (trip) await api.endTrip(trip.id).catch(() => {})
+
+		// Invalidates any resumeSession still in flight — see there.
+		sessionSeq++
+
 		await api.logoutDriver()
 		await AsyncStorage.multiRemove([KEYS.token, KEYS.driver])
 		api.setAuthToken(null)
@@ -828,8 +907,17 @@ export const useStore = create((set, get) => ({
 			if (!trip) throw e
 		}
 
+		try {
+			await get().beginBroadcast(trip.id)
+		} catch (e) {
+			// The server has a run nobody is broadcasting for. Leaving it open
+			// told commuters a jeepney was coming while the driver's screen said
+			// the start had failed; end it, then let the failure through.
+			await api.endTrip(trip.id).catch(() => {})
+			throw e
+		}
+
 		set({ trip, isBroadcasting: true })
-		await get().beginBroadcast(trip.id)
 		return trip
 	},
 
@@ -875,6 +963,13 @@ export const useStore = create((set, get) => ({
 		broadcastGuard = setInterval(async () => {
 			const servicesOn = await Location.hasServicesEnabledAsync().catch(() => false)
 			if (!servicesOn) get().showToast(getCopy().driverHome.locationServicesOff)
+
+			// The banner reads `isBroadcasting`. Toasting alone left it green and
+			// disabled with Location switched off — the exact state it exists to
+			// report — and pressing it did nothing. Now it goes red, becomes the
+			// way to the Location settings, and comes back green on its own once
+			// the fixes resume (the watcher is still alive underneath).
+			if (get().trip && get().isBroadcasting !== servicesOn) set({ isBroadcasting: servicesOn })
 		}, 20_000)
 
 		try {
@@ -884,6 +979,30 @@ export const useStore = create((set, get) => ({
 			// guard toasting forever with nothing to guard.
 			get().stopBroadcast()
 			throw e
+		}
+	},
+
+	/**
+	 * Try the broadcast again — the "not live" banner's action.
+	 *
+	 * Returns false when the phone's Location switch is off, so the caller can
+	 * open the system settings instead: that is the one thing this cannot fix.
+	 * A broadcast that failed to START had no retry at all before this; the
+	 * banner sent the driver to Settings and back to a screen that stayed red.
+	 */
+	retryBroadcast: async () => {
+		const { trip } = get()
+		if (!trip) return false
+
+		const servicesOn = await Location.hasServicesEnabledAsync().catch(() => false)
+		if (!servicesOn) return false
+
+		try {
+			await get().beginBroadcast(trip.id)
+			set({ isBroadcasting: true })
+			return true
+		} catch {
+			return false
 		}
 	},
 
@@ -898,12 +1017,35 @@ export const useStore = create((set, get) => ({
 		}
 	},
 
+	/**
+	 * Ends the run. Returns false — and keeps the run on screen — when the
+	 * server never heard the request.
+	 *
+	 * The old version swallowed the failure and cleared the trip locally, so
+	 * the driver saw "ended" while the server still had them live: commuters
+	 * kept being shown a jeepney that had stopped, and the next launch's
+	 * resumeSession revived the run the driver had already ended. A 404 or 422
+	 * means it IS over, and counts as success.
+	 */
 	endTrip: async () => {
 		const { trip } = get()
+
+		if (trip) {
+			try {
+				await api.endTrip(trip.id)
+			} catch (e) {
+				const status = e?.response?.status
+				if (status !== 404 && status !== 422) {
+					get().showToast(getCopy().common.offline)
+					return false
+				}
+			}
+		}
+
 		get().stopBroadcast()
-		if (trip) await api.endTrip(trip.id).catch(() => {})
 		set({ trip: null, isBroadcasting: false })
 		get().loadSummary()
+		return true
 	},
 
 	stopBroadcast: () => {

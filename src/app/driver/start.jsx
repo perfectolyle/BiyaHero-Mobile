@@ -666,7 +666,12 @@ export default function StartTrip() {
 							)}
 							{suggestions.map(place => (
 								<Pressable
-									key={`${place.name}-${place.coords.latitude}-${place.coords.longitude}`}
+									// A Google prediction has no coordinates until it is chosen —
+									// coords is null by design — and this key is evaluated on
+									// render, before pickPlace ever gets to handle that. With
+									// the Places key configured, typing any business name
+									// crashed the screen here.
+									key={place.placeId ?? `${place.name}-${place.coords?.latitude}-${place.coords?.longitude}`}
 									onPress={() => pickPlace(place)}
 									accessibilityRole="button"
 									className="flex-row items-center gap-3 rounded-lg border-[1.5px] border-line-subtle bg-surface p-3 active:opacity-80"

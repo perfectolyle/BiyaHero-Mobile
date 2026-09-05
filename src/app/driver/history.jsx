@@ -29,7 +29,9 @@ export default function TripHistory() {
 			let cancelled = false
 			fetchTripHistory()
 				.then(data => !cancelled && setRows(data))
-				.catch(() => !cancelled && setRows([]))
+				// A failed request is not an empty history. Collapsing it to []
+				// told a driver with a hundred runs behind them that they had none.
+				.catch(() => !cancelled && setRows('failed'))
 			return () => {
 				cancelled = true
 			}
@@ -50,6 +52,10 @@ export default function TripHistory() {
 			{rows === null ? (
 				<View className="flex-1 items-center justify-center">
 					<ActivityIndicator color={theme.brand.hover} />
+				</View>
+			) : rows === 'failed' ? (
+				<View className="flex-1 justify-center">
+					<EmptyState icon="cloud-off" title={copy.search.offlineTitle} body={copy.search.offlineBody} />
 				</View>
 			) : rows.length === 0 ? (
 				<View className="flex-1 justify-center">

@@ -38,6 +38,7 @@ export default function MapHome() {
 	const searchedPosition = useStore(s => s.destinationPosition)
 	const vehiclesFor = useStore(s => s.vehiclesFor)
 	const error = useStore(s => s.error)
+	const hasReplied = useStore(s => s.hasReplied)
 	const loading = useStore(s => s.loading)
 	const destinationResolved = useStore(s => s.destinationResolved)
 	const selectedVehicleId = useStore(s => s.selectedVehicleId)
@@ -56,7 +57,10 @@ export default function MapHome() {
 	// "nobody is driving". Announcing an empty fleet before the reply lands is
 	// the first thing a judge sees on a cold start, and every time the venue
 	// wifi hiccups.
-	const awaitingFirstReply = loading && vehicles.length === 0 && !error
+	// "First" means first: the store records the first reply for this
+	// destination, and only until then is silence loading. Keyed on `loading`,
+	// every 8 s poll blinked an honestly empty fleet back to a spinner.
+	const awaitingFirstReply = !hasReplied && !error
 
 	const [locateNonce, setLocateNonce] = useState(0)
 

@@ -35,6 +35,7 @@ export default function ActiveTrip() {
 	const beginReroute = useStore(s => s.beginReroute)
 	const isBroadcasting = useStore(s => s.isBroadcasting)
 	const broadcastPosition = useStore(s => s.broadcastPosition)
+	const retryBroadcast = useStore(s => s.retryBroadcast)
 
 	const [elapsed, setElapsed] = useState(0)
 	// How the camera treats the driver's own vehicle. Navigation from the first
@@ -106,8 +107,10 @@ export default function ActiveTrip() {
 				: null
 
 	const finish = async () => {
-		await endTrip()
-		resetTo(router, '/driver')
+		// Stay on the run if the server never heard the end request — the store
+		// has already said so with a toast. Leaving anyway showed "ended" while
+		// commuters still saw this jeepney live.
+		if (await endTrip()) resetTo(router, '/driver')
 	}
 
 	return (
@@ -190,7 +193,13 @@ export default function ActiveTrip() {
 			    reach from here at all. Stating a problem next to no way to act
 			    on it is what the 20-second toast was already doing. */}
 			<Pressable
-				onPress={isBroadcasting ? undefined : () => Linking.openSettings().catch(() => {})}
+				// Retry the broadcast first; only when the phone's Location switch is
+				// the reason does the tap hand off to the system settings.
+				onPress={
+					isBroadcasting
+						? undefined
+						: () => retryBroadcast().then(ok => !ok && Linking.openSettings().catch(() => {}))
+				}
 				disabled={isBroadcasting}
 				accessibilityRole={isBroadcasting ? 'text' : 'button'}
 				accessibilityLabel={isBroadcasting ? copy.activeTrip.liveBanner : copy.activeTrip.notLiveAction}

@@ -5,7 +5,7 @@ import { create } from 'zustand'
  * Kept out of the main store because it is scratch data: it exists only between
  * the first screen and a successful POST, and is discarded either way.
  */
-export const useRegistration = create(set => ({
+export const useRegistration = create((set, get) => ({
 	/**
 	 * True while the vehicle screen is editing the REGISTERED vehicle rather
 	 * than drafting a new registration. Set by the profile's Edit action —
@@ -52,7 +52,11 @@ export const useRegistration = create(set => ({
 			vehiclePhotoUrl: vehicle.photo_url ?? null
 		}),
 
-	endEdit: () => set({ editing: false }),
+	// Leaving the edit screen discards the whole draft, not just the flag. The
+	// values beginEdit copied in — plate, model, operator, body number, photo
+	// URL — otherwise survived a later sign-out and pre-filled the NEXT
+	// driver's registration with this one's jeepney.
+	endEdit: () => get().reset(),
 
 	reset: () =>
 		set({

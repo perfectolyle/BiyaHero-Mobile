@@ -203,8 +203,14 @@ export default function VehicleDetail() {
 					icon={missing ? 'directions-off' : 'cloud-off'}
 					title={missing ? copy.vehicle.tripEndedTitle : copy.search.offlineTitle}
 					body={missing ? copy.vehicle.tripEndedBody : copy.search.offlineBody}
+					// Guarded like the map's own back button below: by deep link, or
+					// after a stack reset, there is nothing to pop, and this was the
+					// only control on the screen.
 					action={
-						<Pressable onPress={() => router.back()} className="mt-2 rounded-lg bg-brand px-6 py-3 active:opacity-80">
+						<Pressable
+							onPress={() => (router.canGoBack() ? router.back() : router.replace('/commuter'))}
+							className="mt-2 rounded-lg bg-brand px-6 py-3 active:opacity-80"
+						>
 							<Txt variant="bodyMStrong" className="text-fg-on-brand">{copy.common.back}</Txt>
 						</Pressable>
 					}
