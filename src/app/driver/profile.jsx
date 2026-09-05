@@ -13,6 +13,7 @@ import { useStore } from '@/services/store'
 import { useRegistration } from '@/services/registration'
 import { useTheme } from '@/theme/useTheme'
 import { useCopy } from '@/constants/copy'
+import { resetTo } from '@/services/nav'
 
 /**
  * 18 · Driver Profile. No rating anywhere by design — passengers are anonymous,
@@ -30,7 +31,7 @@ export default function DriverProfile() {
 
 	const signOut = async () => {
 		await logout()
-		router.replace('/role')
+		resetTo(router, '/role')
 	}
 
 	return (

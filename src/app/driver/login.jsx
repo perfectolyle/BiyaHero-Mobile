@@ -9,6 +9,7 @@ import { Field } from '@/components/ui/Field'
 import { Button } from '@/components/ui/Button'
 import { useStore } from '@/services/store'
 import { useCopy } from '@/constants/copy'
+import { resetTo } from '@/services/nav'
 
 /**
  * Returning driver. LICENCE + PLATE say which driver; the PASSWORD proves it.
@@ -42,7 +43,7 @@ export default function DriverLogin() {
 			// The password is sent as typed — trimming it here would silently
 			// disagree with what was registered.
 			await login({ license_no: licence.trim(), plate_number: plate.trim(), password })
-			router.replace('/driver')
+			resetTo(router, '/driver')
 		} catch (e) {
 			setError(e?.response?.status === 404 ? copy.login.notFound : copy.common.genericError)
 		} finally {

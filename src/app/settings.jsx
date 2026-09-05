@@ -10,6 +10,7 @@ import { Segmented } from '@/components/ui/Segmented'
 import { useStore } from '@/services/store'
 import { usePrefs } from '@/services/prefs'
 import { useCopy, LANGS } from '@/constants/copy'
+import { resetTo } from '@/services/nav'
 
 const THEME_CYCLE = ['system', 'light', 'dark']
 
@@ -54,7 +55,7 @@ export default function Settings() {
 	const switchRole = async next => {
 		if (next === role) return
 		await setRole(next)
-		router.replace(next === 'driver' ? '/driver' : '/commuter')
+		resetTo(router, next === 'driver' ? '/driver' : '/commuter')
 	}
 
 	const cycleLang = () => {

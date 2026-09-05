@@ -14,6 +14,7 @@ import { useRegistration } from '@/services/registration'
 import { useStore } from '@/services/store'
 import { useTheme } from '@/theme/useTheme'
 import { useCopy } from '@/constants/copy'
+import { resetTo } from '@/services/nav'
 
 /** Mirrors the server rule: PH licences are a 3-2-6 pattern. */
 const LICENCE_PATTERN = /^[A-Z]\d{2}-\d{2}-\d{6}$/
@@ -133,7 +134,7 @@ export default function LicenceCapture() {
 			reset()
 			// Format and expiry are all that can be checked, and they passed —
 			// so the driver is already approved and can go straight to work.
-			router.replace('/driver')
+			resetTo(router, '/driver')
 		} catch (e) {
 			if (e?.response?.status === 409) {
 				showToast(copy.signUp.alreadyRegistered)

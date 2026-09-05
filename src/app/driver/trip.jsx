@@ -17,6 +17,7 @@ import { subscribe } from '@/services/realtime'
 import { elevation, PING_INTERVAL_MS } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
 import { useCopy } from '@/constants/copy'
+import { resetTo } from '@/services/nav'
 
 /**
  * 17 · Active Trip. While this screen is open the vehicle is broadcasting and
@@ -102,7 +103,7 @@ export default function ActiveTrip() {
 
 	const finish = async () => {
 		await endTrip()
-		router.replace('/driver')
+		resetTo(router, '/driver')
 	}
 
 	return (
