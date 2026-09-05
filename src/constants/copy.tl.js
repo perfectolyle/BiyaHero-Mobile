@@ -410,7 +410,9 @@ export const startTrip = {
 
 export const activeTrip = {
 	liveBanner: 'LIVE — nakikita ka ng mga pasahero',
-	notLiveBanner: 'Hindi nagba-broadcast — hindi ka nakikita ng mga pasahero',
+	notLiveBanner: 'Hindi ka nakikita — pindutin para ayusin',
+	notLiveAction: 'Hindi ka nakikita ng mga pasahero. Pindutin para buksan ang Location settings.',
+	openProfile: 'Buksan ang profile mo',
 	heading: dest => `Papuntang ${dest}`,
 	elapsed: (mins, km) => `${mins} min na · ${km} km ang nabiyahe`,
 	change: 'Palitan',

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { View, Pressable, ScrollView } from 'react-native'
+import { View, Pressable, ScrollView, Linking } from 'react-native'
 import { Redirect, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
@@ -8,6 +8,7 @@ import { Map } from '@/components/Map'
 import { Sheet } from '@/components/ui/Sheet'
 import { Txt } from '@/components/ui/Txt'
 import { Button } from '@/components/ui/Button'
+import { Avatar } from '@/components/ui/Avatar'
 import { CapacityPicker } from '@/components/CapacityPicker'
 import { LocateButton } from '@/components/LocateButton'
 import { useStore } from '@/services/store'
@@ -118,16 +119,51 @@ export default function ActiveTrip() {
 				selfVehicle={{ position: broadcastPosition, vehicle_type: driver?.vehicle?.vehicle_type ?? 'jeepney' }}
 				waitingPins={watchers.points}
 				locateNonce={locateNonce}
-				controls={<LocateButton onPress={() => setLocateNonce(n => n + 1)} />}
+				// The avatar is the ONLY route off this screen that does not end
+				// the trip. Driver home is where it normally lives, and home is
+				// exactly what this screen replaces: driver/index redirects to
+				// here the moment a trip exists, so profile — and through it
+				// history, help and settings — had no reachable entry for the
+				// whole run. Ending the trip to change the language, or to fix
+				// the GPS this screen is complaining about, is not a trade a
+				// driver should be asked to make.
+				controls={
+					<>
+						{/* 56 with the same border and surface as LocateButton — the
+						    map stacks its controls in one column and they have to
+						    read as one set, not as an avatar parked next to a
+						    button. The initial sits inside at driver-home's size. */}
+						<Pressable
+							onPress={() => router.push('/driver/profile')}
+							accessibilityRole="button"
+							accessibilityLabel={copy.activeTrip.openProfile}
+							style={elevation.float}
+							className="h-14 w-14 items-center justify-center rounded-full border-[1.5px] border-line-subtle bg-surface active:opacity-80"
+						>
+							<Avatar name={driver?.name} size={44} tone="brand" />
+						</Pressable>
+						<LocateButton onPress={() => setLocateNonce(n => n + 1)} />
+					</>
+				}
 				controlsBottom={520}
 			/>
 
-			<View
+			{/* The banner is a factual claim about the watcher, not about the
+			    trip row: if broadcasting stopped, commuters cannot see them.
+
+			    When it IS stopped it also becomes the fix. The cause is almost
+			    always the phone's Location switch, and the only control for
+			    that is the system settings screen — which the driver could not
+			    reach from here at all. Stating a problem next to no way to act
+			    on it is what the 20-second toast was already doing. */}
+			<Pressable
+				onPress={isBroadcasting ? undefined : () => Linking.openSettings().catch(() => {})}
+				disabled={isBroadcasting}
+				accessibilityRole={isBroadcasting ? 'text' : 'button'}
+				accessibilityLabel={isBroadcasting ? copy.activeTrip.liveBanner : copy.activeTrip.notLiveAction}
 				style={{ top: insets.top + 6, ...elevation.float }}
-				// The banner is a factual claim about the watcher, not about the
-				// trip row: if broadcasting stopped, commuters cannot see them.
-				className={`absolute self-center flex-row items-center gap-2 rounded-full border-[1.5px] bg-surface px-4 py-2 ${
-					isBroadcasting ? 'border-capacity-open-fg' : 'border-capacity-stale-fg'
+				className={`absolute max-w-[88%] self-center flex-row items-center gap-2 rounded-full border-[1.5px] bg-surface px-4 py-2 ${
+					isBroadcasting ? 'border-capacity-open-fg' : 'border-capacity-stale-fg active:opacity-80'
 				}`}
 			>
 				<View
@@ -135,11 +171,17 @@ export default function ActiveTrip() {
 				/>
 				<Txt
 					variant="bodyMStrong"
-					className={isBroadcasting ? 'text-capacity-open-fg' : 'text-capacity-stale-fg'}
+					numberOfLines={2}
+					className={`min-w-0 flex-1 ${isBroadcasting ? 'text-capacity-open-fg' : 'text-capacity-stale-fg'}`}
 				>
 					{isBroadcasting ? copy.activeTrip.liveBanner : copy.activeTrip.notLiveBanner}
 				</Txt>
-			</View>
+				{/* Only when it does something. A chevron on the healthy state
+				    would be the "looks tappable but is not" problem in reverse. */}
+				{!isBroadcasting && (
+					<MaterialIcons name="chevron-right" size={20} color={theme.capacity.stale.fg} />
+				)}
+			</Pressable>
 
 			{/* Head, not scroll content: it is what the driver drags to open the
 			    sheet. The pan gesture needs a clearly vertical drag, so the

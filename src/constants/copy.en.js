@@ -355,7 +355,9 @@ export const startTrip = {
 
 export const activeTrip = {
 	liveBanner: 'LIVE — passengers can see you',
-	notLiveBanner: 'Not broadcasting — passengers cannot see you',
+	notLiveBanner: 'Not visible — tap to fix',
+	notLiveAction: 'Passengers cannot see you. Tap to open Location settings.',
+	openProfile: 'Open your profile',
 	heading: dest => `Bound for ${dest}`,
 	elapsed: (mins, km) => `${mins} min in · ${km} km travelled`,
 	change: 'Change',
