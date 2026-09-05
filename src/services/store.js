@@ -973,6 +973,17 @@ export const useStore = create((set, get) => ({
 		}, 20_000)
 
 		try {
+			// The cached fix goes on the map at once. The watcher's first fresh
+			// fix can be a long time coming indoors, and until it landed the
+			// driver's own screen had nothing to follow — a flat, framed route
+			// under a lit follow control, which read as the follow not working.
+			// The first real fix replaces it; a failed watcher clears it below.
+			if (!get().broadcastPosition) {
+				const seed = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60_000 }).catch(() => null)
+				if (seed?.coords && !get().broadcastPosition && get().trip?.id === tripId) {
+					set({ broadcastPosition: { latitude: seed.coords.latitude, longitude: seed.coords.longitude } })
+				}
+			}
 			broadcastWatcher = await startBroadcastWatcher(tripId, get, set)
 		} catch (e) {
 			// A rejected watcher (GPS flipped off mid-start) must not leave the

@@ -19,6 +19,15 @@ import { useCopy } from '@/constants/copy'
 import { resetTo } from '@/services/nav'
 
 /**
+ * How much of the screen the sheet keeps at rest, in dp: the heading, the
+ * capacity chips and the End button. The map gets the rest. At 500 the map
+ * was a letterbox above a sheet, the control column and the LIVE banner
+ * were fighting for what was left, and the camera — aimed at the middle of
+ * the whole screen — kept the vehicle behind the sheet.
+ */
+const PEEK = 300
+
+/**
  * 17 · Active Trip. While this screen is open the vehicle is broadcasting and
  * visible to commuters — ending the trip removes it from their map immediately.
  */
@@ -181,7 +190,8 @@ export default function ActiveTrip() {
 						</Pressable>
 					</>
 				}
-				controlsBottom={520}
+				controlsBottom={PEEK + 16}
+				bottomInset={PEEK}
 			/>
 
 			{/* The banner is a factual claim about the watcher, not about the
@@ -229,9 +239,9 @@ export default function ActiveTrip() {
 			    sheet. The pan gesture needs a clearly vertical drag, so the
 			    "Palitan" button inside still takes its own taps. */}
 			<Sheet
-				peekHeight={500}
+				peekHeight={PEEK}
 				head={
-					<View className="flex-row items-start justify-between gap-3 pb-4 pt-1">
+					<View className="flex-row items-start justify-between gap-3 pb-3 pt-1">
 						<View className="min-w-0 flex-1 gap-[2px]">
 							{/* Two lines at Heading/M, not one at Heading/L: beside the
 							    "Change" pill, "Bound for SM City Tarlac" was reaching
@@ -256,6 +266,19 @@ export default function ActiveTrip() {
 				}
 			>
 				<ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="pb-6 gap-6">
+					{/* What the driver touches while moving sits in the peek: the
+					    capacity, then the way out. The watcher strip waits under
+					    the fold, where a drag finds it. */}
+					<View className="gap-3">
+						<Txt variant="labelS" className="text-fg-secondary">{copy.activeTrip.capacityPrompt}</Txt>
+						<CapacityPicker value={trip.capacity} onChange={setCapacity} />
+					</View>
+
+					<View className="gap-3">
+						<Button label={copy.activeTrip.end} tone="danger" onPress={finish} />
+						<Txt variant="caption" className="text-center text-fg-secondary">{copy.activeTrip.endNote}</Txt>
+					</View>
+
 					{/* Shown even at zero: a driver seeing no pins must be able to
 					    tell an empty corner from a feature that is broken. */}
 					<View className="flex-row items-center gap-[14px] rounded-lg bg-surface-sunken p-[14px]">
@@ -281,16 +304,6 @@ export default function ActiveTrip() {
 											].join(' · ')}
 							</Txt>
 						</View>
-					</View>
-
-					<View className="gap-3">
-						<Txt variant="labelS" className="text-fg-secondary">{copy.activeTrip.capacityPrompt}</Txt>
-						<CapacityPicker value={trip.capacity} onChange={setCapacity} />
-					</View>
-
-					<View className="gap-3">
-						<Button label={copy.activeTrip.end} tone="danger" onPress={finish} />
-						<Txt variant="caption" className="text-center text-fg-secondary">{copy.activeTrip.endNote}</Txt>
 					</View>
 				</ScrollView>
 			</Sheet>

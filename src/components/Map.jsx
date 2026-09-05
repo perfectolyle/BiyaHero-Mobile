@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { View, Pressable, useWindowDimensions } from 'react-native'
+import { View, Pressable, Modal, useWindowDimensions } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps'
 import { MaterialIcons } from '@expo/vector-icons'
@@ -601,9 +602,53 @@ const PIN_ICONS = { normal: 'directions-bus', dim: 'opacity', hide: 'visibility-
  * Unpositioned on purpose — it sits in the Map's control column so it lines up
  * with whatever else a screen stacks there.
  */
+/** One row of the layer sheet: a label over three equal chips. */
+const LayerRow = ({ label, options, icons, names, value, onChange }) => {
+	const { theme } = useTheme()
+
+	return (
+		<View className="gap-2">
+			<Txt variant="labelS" className="text-fg-secondary">{label}</Txt>
+			<View className="flex-row gap-2">
+				{options.map(option => {
+					const active = option === value
+
+					return (
+						<Pressable
+							key={option}
+							onPress={() => onChange(option)}
+							accessibilityRole="radio"
+							accessibilityState={{ selected: active }}
+							accessibilityLabel={names[option]}
+							className={`flex-1 items-center gap-2 rounded-lg border-[1.5px] px-2 py-3 active:opacity-80 ${
+								active ? 'border-brand bg-brand-subtle' : 'border-line-subtle bg-surface'
+							}`}
+						>
+							<MaterialIcons name={icons[option]} size={22} color={active ? theme.brand.hover : theme.icon.secondary} />
+							<Txt variant="labelL" numberOfLines={1} className={active ? 'text-brand-hover' : 'text-fg-secondary'}>
+								{names[option]}
+							</Txt>
+						</Pressable>
+					)
+				})}
+			</View>
+		</View>
+	)
+}
+
+/**
+ * The layer button, and the sheet it opens. A sheet in a Modal rather than a
+ * popover beside the button: the popover grew upwards from wherever the
+ * control column sat, and on the driver's trip screen — column high on a
+ * short map — it ran off the top of the screen, the map-type rows unreachable
+ * above the status bar and the rest sitting on the LIVE banner. A Modal sits
+ * above every sheet and every banner whatever the screen, and closes on the
+ * scrim, on Back, and on a choice.
+ */
 const LayerPicker = () => {
 	const copy = useCopy()
 	const { theme } = useTheme()
+	const insets = useSafeAreaInsets()
 	const mapType = usePrefs(s => s.mapType)
 	const setMapType = usePrefs(s => s.setMapType)
 	const pinMode = usePrefs(s => s.pinMode)
@@ -611,68 +656,9 @@ const LayerPicker = () => {
 	const [open, setOpen] = useState(false)
 
 	return (
-		<View className="items-end gap-2">
-			{open && (
-				<View style={elevation.float} className="gap-1 rounded-lg border-[1.5px] border-line-subtle bg-surface p-2">
-					{MAP_TYPES.map(type => (
-						<Pressable
-							key={type}
-							onPress={() => {
-								setMapType(type)
-								setOpen(false)
-							}}
-							accessibilityRole="button"
-							accessibilityState={{ selected: mapType === type }}
-							className={`flex-row items-center gap-2 rounded-md px-3 py-2 active:opacity-80 ${
-								mapType === type ? 'bg-brand-subtle' : ''
-							}`}
-						>
-							<MaterialIcons
-								name={LAYER_ICONS[type]}
-								size={18}
-								color={mapType === type ? theme.brand.hover : theme.icon.secondary}
-							/>
-							<Txt variant="bodyMStrong" className={mapType === type ? 'text-brand-hover' : 'text-fg-secondary'}>
-								{copy.mapHome.layerNames[type]}
-							</Txt>
-						</Pressable>
-					))}
-
-					{/* The fleet, as a layer of its own. Thirty badges at province
-					    zoom sat on top of "Tarlac", "Angeles" and "Manila", and
-					    at street zoom on the landmark a commuter was steering by.
-					    Dimming lets the map read through them; hiding leaves the
-					    list in the sheet as the fleet's only presence. */}
-					<View className="my-1 h-px bg-line-subtle" />
-					<Txt variant="labelS" className="px-3 pb-1 pt-1 text-fg-secondary">{copy.mapHome.pins}</Txt>
-					{Object.keys(PIN_ICONS).map(mode => (
-						<Pressable
-							key={mode}
-							onPress={() => {
-								setPinMode(mode)
-								setOpen(false)
-							}}
-							accessibilityRole="button"
-							accessibilityState={{ selected: pinMode === mode }}
-							className={`flex-row items-center gap-2 rounded-md px-3 py-2 active:opacity-80 ${
-								pinMode === mode ? 'bg-brand-subtle' : ''
-							}`}
-						>
-							<MaterialIcons
-								name={PIN_ICONS[mode]}
-								size={18}
-								color={pinMode === mode ? theme.brand.hover : theme.icon.secondary}
-							/>
-							<Txt variant="bodyMStrong" className={pinMode === mode ? 'text-brand-hover' : 'text-fg-secondary'}>
-								{copy.mapHome.pinModes[mode]}
-							</Txt>
-						</Pressable>
-					))}
-				</View>
-			)}
-
+		<>
 			<Pressable
-				onPress={() => setOpen(o => !o)}
+				onPress={() => setOpen(true)}
 				accessibilityRole="button"
 				accessibilityLabel={copy.mapHome.layers}
 				style={elevation.float}
@@ -680,7 +666,55 @@ const LayerPicker = () => {
 			>
 				<MaterialIcons name="layers" size={24} color={open ? theme.brand.hover : theme.icon.secondary} />
 			</Pressable>
-		</View>
+
+			<Modal visible={open} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setOpen(false)}>
+				<Pressable
+					onPress={() => setOpen(false)}
+					accessibilityRole="button"
+					accessibilityLabel={copy.common.close}
+					style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(15, 23, 42, 0.4)' }}
+				>
+					{/* A Pressable of its own, so a tap inside the card is not a tap
+					    on the scrim behind it. */}
+					<Pressable
+						onPress={() => {}}
+						style={[elevation.sheet, { paddingBottom: insets.bottom + 16 }]}
+						className="gap-5 rounded-t-2xl bg-surface px-6 pt-3"
+					>
+						<View className="items-center pb-1">
+							<View className="h-[5px] w-10 rounded-[3px] bg-line" />
+						</View>
+						<LayerRow
+							label={copy.mapHome.layers}
+							options={MAP_TYPES}
+							icons={LAYER_ICONS}
+							names={copy.mapHome.layerNames}
+							value={mapType}
+							onChange={type => {
+								setMapType(type)
+								setOpen(false)
+							}}
+						/>
+						{/* The fleet, as a layer of its own. Thirty badges at province
+						    zoom sat on top of "Tarlac", "Angeles" and "Manila", and
+						    at street zoom on the landmark a commuter was steering by.
+						    Dimming lets the map read through them; hiding leaves the
+						    list in the sheet as the fleet's only presence. */}
+						<LayerRow
+							label={copy.mapHome.pins}
+							options={Object.keys(PIN_ICONS)}
+							icons={PIN_ICONS}
+							names={copy.mapHome.pinModes}
+							value={pinMode}
+							onChange={mode => {
+								setPinMode(mode)
+								setOpen(false)
+							}}
+						/>
+					</Pressable>
+				</Pressable>
+			</Modal>
+		</>
 	)
 }
 
@@ -742,7 +776,12 @@ export const Map = ({
 	// the same column, so every screen's controls share one right edge.
 	controls,
 	// Clears the tallest sheet on any screen using this map.
-	controlsBottom = 420
+	controlsBottom = 420,
+	// How much of the map's bottom edge a sheet covers, in dp. Handed to the
+	// map as padding, so its idea of "centre" is the centre of what can be
+	// seen: the navigation camera aimed at the middle of the whole screen
+	// put the driver's own vehicle squarely behind the sheet.
+	bottomInset = 0
 }) => {
 	const { theme, scheme } = useTheme()
 	const { width: screenW, height: screenH } = useWindowDimensions()
@@ -960,6 +999,9 @@ export const Map = ({
 		// is committed to it; a commuter who wants to look around turns follow off,
 		// which is the whole point of it being a toggle.
 		const span = 0.012
+		// With the sheet already handed to the map as padding, the centre IS
+		// the visible centre — biasing on top of it would shift twice.
+		const bias = bottomInset > 0 ? 0 : centerBias
 
 		// Navigation keeps the last good heading: a vehicle waiting at a light
 		// produces fixes a metre apart whose bearing is noise, and swinging the
@@ -996,7 +1038,7 @@ export const Map = ({
 			// bias below and parks the vehicle under the sheet.
 			mapRef.current.animateToRegion(
 				{
-					latitude: here.latitude - span * centerBias,
+					latitude: here.latitude - span * bias,
 					longitude: here.longitude,
 					latitudeDelta: span,
 					longitudeDelta: span * (screenW / screenH)
@@ -1015,7 +1057,7 @@ export const Map = ({
 			// leaning at 50° reads as broken rather than as a choice.
 			if (followMode === 'navigation') mapRef.current?.animateCamera({ heading: 0, pitch: 0 }, { duration: 300 })
 		}
-	}, [follow, followKey, followMode, centerBias])
+	}, [follow, followKey, followMode, centerBias, bottomInset])
 
 	// Frame the matches ONCE per fitKey — a new search, a new route. The
 	// points array is rebuilt on every 8 s poll, and re-fitting on that would
@@ -1072,7 +1114,9 @@ export const Map = ({
 		}
 
 		mapRef.current.fitToCoordinates(points, {
-			edgePadding: { top: 120, right: 80, bottom: 380, left: 80 },
+			// The sheet is already padding when bottomInset is set; 380 on top of
+			// it squeezed the route into the top third of what was visible.
+			edgePadding: { top: 120, right: 80, bottom: bottomInset > 0 ? 120 : 380, left: 80 },
 			animated: true
 		})
 	}, [fitTo, fitKey, mapReady, follow])
@@ -1088,6 +1132,7 @@ export const Map = ({
 				provider={PROVIDER_GOOGLE}
 				style={{ flex: 1 }}
 				initialRegion={initialRegion}
+				mapPadding={{ top: 0, right: 0, bottom: bottomInset, left: 0 }}
 				onMapReady={() => setMapReady(true)}
 				// Tapping bare map clears whatever the user was following —
 				// marker taps fire their own handler and never reach this.
