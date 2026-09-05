@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Keyboard, ScrollView, TextInput } from 'react-native'
+import { Keyboard, ScrollView, TextInput, View } from 'react-native'
 
 /** Room left above the keyboard so the field is not flush against it. */
 const CLEARANCE = 24
@@ -58,14 +58,21 @@ export const FormScroll = ({ children, ...props }) => {
 	}, [])
 
 	return (
-		<ScrollView
-			ref={scroll}
-			showsVerticalScrollIndicator={false}
-			keyboardShouldPersistTaps="handled"
-			contentContainerStyle={{ paddingBottom: keyboard }}
-			{...props}
-		>
+		<ScrollView ref={scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" {...props}>
 			{children}
+			{/* A spacer, not contentContainerStyle.paddingBottom.
+
+			    Every caller sizes its own bottom padding through
+			    contentContainerClassName, and NativeWind compiles that to the
+			    same contentContainerStyle prop — so setting it here REPLACED
+			    their pb-* rather than adding to it, and with the keyboard shut
+			    that meant paddingBottom: 0. The last button on every form sat
+			    flush against the bottom edge of the screen.
+
+			    Only mounted while the keyboard is open, because the container's
+			    own `gap` would otherwise put a full gap's worth of dead space
+			    under the last row to separate it from a zero-height spacer. */}
+			{keyboard > 0 && <View style={{ height: keyboard }} />}
 		</ScrollView>
 	)
 }
