@@ -105,9 +105,10 @@ export default function VehicleDetails() {
 	return (
 		<Screen>
 			<KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
-				<FormScroll contentContainerClassName="pb-4 pt-2 gap-4 flex-grow">
+				<FormScroll contentContainerClassName="pb-4 pt-2 gap-3 flex-grow">
 					<View className="gap-2">
 						<Header
+							compact
 							eyebrow={copy.vehicleDetails.eyebrow}
 							title={isEdit ? copy.vehicleDetails.editTitle : copy.vehicleDetails.title}
 							right={isEdit ? null : <Txt variant="labelS" className="text-fg-secondary">{copy.signUp.step(1, 2)}</Txt>}

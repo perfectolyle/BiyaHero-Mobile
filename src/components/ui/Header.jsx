@@ -6,14 +6,16 @@ import { useTheme } from '@/theme/useTheme'
 import { useCopy } from '@/constants/copy'
 
 /** Back affordance + title. `eyebrow` carries the step label on the driver wizard. */
-export const Header = ({ title, eyebrow, onBack, right, className = '' }) => {
+export const Header = ({ title, eyebrow, onBack, right, compact = false, className = '' }) => {
 	const copy = useCopy()
 	const { theme } = useTheme()
 	const router = useRouter()
 	const goBack = onBack || (() => (router.canGoBack() ? router.back() : router.replace('/')))
 
 	return (
-		<View className={`gap-4 ${className}`}>
+		// `compact` is for a step whose FIELDS are the content: the chrome gives
+		// back its spacing and a size, rather than the form losing a note.
+		<View className={`${compact ? "gap-2" : "gap-4"} ${className}`}>
 			<View className="flex-row items-center justify-between">
 				<Pressable
 					onPress={goBack}
@@ -27,7 +29,7 @@ export const Header = ({ title, eyebrow, onBack, right, className = '' }) => {
 				{right}
 			</View>
 			{!!eyebrow && <Txt variant="labelS" className="text-brand-hover">{eyebrow}</Txt>}
-			{!!title && <Txt variant="displayS">{title}</Txt>}
+			{!!title && <Txt variant={compact ? "headingL" : "displayS"}>{title}</Txt>}
 		</View>
 	)
 }
