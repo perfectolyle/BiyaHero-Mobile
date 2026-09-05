@@ -654,6 +654,7 @@ export default function StartTrip() {
 						value={destination}
 						onChangeText={typeDestination}
 						onClear={() => typeDestination('')}
+						loading={searching}
 						placeholder={copy.startTrip.destinationPlaceholder}
 					/>
 

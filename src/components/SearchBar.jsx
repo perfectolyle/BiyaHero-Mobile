@@ -1,4 +1,4 @@
-import { View, Pressable, TextInput } from 'react-native'
+import { View, Pressable, TextInput, ActivityIndicator } from 'react-native'
 import { MaterialIcons } from '@expo/vector-icons'
 import { Txt } from '@/components/ui/Txt'
 import { type, elevation } from '@/theme/tokens'
@@ -11,8 +11,13 @@ import { useCopy } from '@/constants/copy'
  *
  * Renders as a button when `onPress` is given (Map Home taps through to the
  * search screen) and as a live input when `onChangeText` is given.
+ *
+ * `loading` puts a spinner where the clear button sits. Search waits on a
+ * debounce and then a geocoder, which is long enough that a still screen reads
+ * as "no results" rather than "still looking" — and the driver or commuter
+ * retypes a query that was already on its way.
  */
-export const SearchBar = ({ value, onChangeText, onPress, onClear, onSubmit, autoFocus, placeholder }) => {
+export const SearchBar = ({ value, onChangeText, onPress, onClear, onSubmit, autoFocus, loading = false, placeholder }) => {
 	const copy = useCopy()
 	const { theme } = useTheme()
 	const hint = placeholder ?? copy.mapHome.searchPlaceholder
@@ -25,10 +30,14 @@ export const SearchBar = ({ value, onChangeText, onPress, onClear, onSubmit, aut
 				<Txt variant="bodyL" className={value ? 'flex-1 text-fg' : 'flex-1 text-icon-muted'} numberOfLines={1}>
 					{value || hint}
 				</Txt>
-				{!!value && !!onClear && (
-					<Pressable onPress={onClear} hitSlop={10} accessibilityRole="button" accessibilityLabel={copy.search.clear}>
-						<MaterialIcons name="close" size={20} color={theme.icon.secondary} />
-					</Pressable>
+				{loading ? (
+					<ActivityIndicator size="small" color={theme.icon.secondary} />
+				) : (
+					!!value && !!onClear && (
+						<Pressable onPress={onClear} hitSlop={10} accessibilityRole="button" accessibilityLabel={copy.search.clear}>
+							<MaterialIcons name="close" size={20} color={theme.icon.secondary} />
+						</Pressable>
+					)
 				)}
 			</Pressable>
 		)
@@ -47,10 +56,16 @@ export const SearchBar = ({ value, onChangeText, onPress, onClear, onSubmit, aut
 				onSubmitEditing={onSubmit}
 				style={[type.bodyL, { flex: 1, color: theme.text.primary, padding: 0 }]}
 			/>
-			{!!value && (
-				<Pressable onPress={onClear} hitSlop={10} accessibilityRole="button" accessibilityLabel={copy.search.clear}>
-					<MaterialIcons name="close" size={20} color={theme.icon.secondary} />
-				</Pressable>
+			{/* One slot, not two: a spinner beside a clear button makes the row
+			    jump by 20dp every time a keystroke starts a request. */}
+			{loading ? (
+				<ActivityIndicator size="small" color={theme.icon.secondary} />
+			) : (
+				!!value && (
+					<Pressable onPress={onClear} hitSlop={10} accessibilityRole="button" accessibilityLabel={copy.search.clear}>
+						<MaterialIcons name="close" size={20} color={theme.icon.secondary} />
+					</Pressable>
+				)
 			)}
 		</View>
 	)

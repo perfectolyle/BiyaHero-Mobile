@@ -120,6 +120,10 @@ export default function DestinationSearch() {
 						onClear={() => setQuery('')}
 						onSubmit={chooseTyped}
 						autoFocus
+						// Only while something is typed. The popular list loads
+						// on mount too, and a spinner over an empty box reads as
+						// a stuck screen rather than as progress.
+						loading={loading && searching}
 					/>
 				</View>
 			</View>
