@@ -67,8 +67,6 @@ export default function VehicleDetails() {
 
 	// The photo is what a commuter matches from a corner — a plate is only
 	// readable once the jeepney has already arrived. Required, not optional.
-	const carriesOperator = vehicle_type === 'bus' || vehicle_type === 'uv_express'
-
 	const hasPhoto = !!(vehiclePhotoUri || vehiclePhotoUrl)
 
 	const next = () => {
@@ -199,6 +197,12 @@ export default function VehicleDetails() {
 								</Pressable>
 							</View>
 						)}
+
+						{/* The photo is the one requirement a driver would not guess:
+						    it used to be optional, and nothing else on this step says
+						    so. Every other unmarked field is required by the same
+						    convention; the optional ones say so on their label. */}
+						<Txt variant="caption" className="text-fg-secondary">{copy.vehicleDetails.photoNote}</Txt>
 					</View>
 
 					<Field
@@ -212,29 +216,26 @@ export default function VehicleDetails() {
 						error={error}
 					/>
 
+					{/* Its own field, not swapped in by vehicle type. A bus has BOTH a
+					    company and a model, and plenty of jeepneys run under a
+					    cooperative — deciding for the driver which of the two they are
+					    allowed to state was the wrong call. */}
+					<Field
+						label={copy.vehicleDetails.operatorLabel}
+						placeholder={copy.vehicleDetails.operatorPlaceholder}
+						value={operator}
+						onChangeText={value => update({ operator: value })}
+						autoCapitalize="words"
+					/>
+
 					<View className="flex-row gap-3">
-						{/* Buses and vans carry a company name painted along the side and
-						    that is what a commuter reads; jeepneys are owner-operated and
-						    have none, so they give their build instead. One field either
-						    way, which keeps this step on a single screen. */}
-						{carriesOperator ? (
-							<Field
-								className="flex-1"
-								label={copy.vehicleDetails.operatorLabel}
-								placeholder={copy.vehicleDetails.operatorPlaceholder}
-								value={operator}
-								onChangeText={value => update({ operator: value })}
-								autoCapitalize="words"
-							/>
-						) : (
-							<Field
-								className="flex-1"
-								label={copy.vehicleDetails.modelLabel}
-								placeholder={copy.vehicleDetails.modelPlaceholder}
-								value={model}
-								onChangeText={value => update({ model: value })}
-							/>
-						)}
+						<Field
+							className="flex-1"
+							label={copy.vehicleDetails.modelLabel}
+							placeholder={copy.vehicleDetails.modelPlaceholder}
+							value={model}
+							onChangeText={value => update({ model: value })}
+						/>
 
 						<Field
 							className="w-[34%]"

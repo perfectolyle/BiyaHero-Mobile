@@ -219,10 +219,10 @@ export const vehicleDetails = {
 	platePlaceholder: 'NCR 8842',
 	modelLabel: 'MODELO',
 	modelPlaceholder: 'Sarao 2018',
-	operatorLabel: 'KOMPANYA',
-	operatorPlaceholder: 'Victory Liner',
+	operatorLabel: 'KOMPANYA · OPSYONAL',
+	operatorPlaceholder: 'Victory Liner, 5Star, Solid North',
 	bodyLabel: 'BODY NO.',
-	bodyNote: 'Nakapinta sa katawan, hindi ang plaka.',
+	bodyNote: 'Opsyonal · nakapinta sa katawan, hindi ang plaka.',
 	bodyPlaceholder: '214',
 	plateNote: 'Pampubliko ang plaka — nakapinta na ito sa sasakyan.',
 	/**
@@ -230,6 +230,7 @@ export const vehicleDetails = {
 	 * plainly. It is also why the note names the sasakyan and never the driver.
 	 */
 	photoLabel: 'LARAWAN NG SASAKYAN',
+	photoNote: 'Kailangan · ito ang hahanapin ng pasahero sa kanto.',
 	needPhoto: 'Kunan o pumili muna ng larawan ng sasakyan.',
 	photoTake: 'Kunan',
 	photoPick: 'Pumili',

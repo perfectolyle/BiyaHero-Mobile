@@ -205,10 +205,10 @@ export const vehicleDetails = {
 	platePlaceholder: 'NCR 8842',
 	modelLabel: 'MODEL',
 	modelPlaceholder: 'Sarao 2018',
-	operatorLabel: 'COMPANY',
-	operatorPlaceholder: 'Victory Liner',
+	operatorLabel: 'COMPANY · OPTIONAL',
+	operatorPlaceholder: 'Victory Liner, 5Star, Solid North',
 	bodyLabel: 'BODY NO.',
-	bodyNote: 'Painted on the body, not the plate.',
+	bodyNote: 'Optional · painted on the body, not the plate.',
 	bodyPlaceholder: '214',
 	plateNote: 'The plate is public — it is painted on the vehicle.',
 	/**
@@ -216,6 +216,7 @@ export const vehicleDetails = {
 	 * plainly. It is also why the note names the vehicle and never the driver.
 	 */
 	photoLabel: 'VEHICLE PHOTO',
+	photoNote: 'Required · this is what a commuter looks for from the corner.',
 	needPhoto: 'Take or choose a photo of the vehicle first.',
 	photoTake: 'Take one',
 	photoPick: 'Choose',
