@@ -10,7 +10,6 @@ import { Txt } from '@/components/ui/Txt'
 import { Button } from '@/components/ui/Button'
 import { Avatar } from '@/components/ui/Avatar'
 import { CapacityPicker } from '@/components/CapacityPicker'
-import { LocateButton } from '@/components/LocateButton'
 import { useStore } from '@/services/store'
 import { fetchTripWatchers } from '@/services/api'
 import { subscribe } from '@/services/realtime'
@@ -38,7 +37,12 @@ export default function ActiveTrip() {
 	const broadcastPosition = useStore(s => s.broadcastPosition)
 
 	const [elapsed, setElapsed] = useState(0)
-	const [locateNonce, setLocateNonce] = useState(0)
+	// How the camera treats the driver's own vehicle. Navigation from the first
+	// frame — heading-up, tilted, locked on — because that is what a driver
+	// expects a trip screen to do; one tap steps to a north-up follow, one more
+	// frees the map. Panning frees it too. A one-shot recentre used to live here
+	// and did not stay with the vehicle, which read as "focus is not working".
+	const [followMode, setFollowMode] = useState('navigation')
 	const [watchers, setWatchers] = useState({ count: 0, onRouteCount: 0, nearestM: null, points: [] })
 
 	useEffect(() => {
@@ -119,7 +123,11 @@ export default function ActiveTrip() {
 				fitKey={trip.route?.id ?? trip.id}
 				selfVehicle={{ position: broadcastPosition, vehicle_type: driver?.vehicle?.vehicle_type ?? 'jeepney' }}
 				waitingPins={watchers.points}
-				locateNonce={locateNonce}
+				follow={followMode !== 'off'}
+				followKey="self"
+				followMode={followMode === 'navigation' ? 'navigation' : 'region'}
+				centerOn={broadcastPosition}
+				onUserPan={() => setFollowMode('off')}
 				// The avatar is the ONLY route off this screen that does not end
 				// the trip. Driver home is where it normally lives, and home is
 				// exactly what this screen replaces: driver/index redirects to
@@ -130,10 +138,10 @@ export default function ActiveTrip() {
 				// driver should be asked to make.
 				controls={
 					<>
-						{/* 56 with the same border and surface as LocateButton — the
-						    map stacks its controls in one column and they have to
-						    read as one set, not as an avatar parked next to a
-						    button. The initial sits inside at driver-home's size. */}
+						{/* 56 with the same border and surface as the follow control
+						    below it — the map stacks its controls in one column and
+						    they have to read as one set, not as an avatar parked next
+						    to a button. The initial sits inside at driver-home's size. */}
 						<Pressable
 							onPress={() => router.push('/driver/profile')}
 							accessibilityRole="button"
@@ -143,7 +151,31 @@ export default function ActiveTrip() {
 						>
 							<Avatar name={driver?.name} size={44} tone="brand" />
 						</Pressable>
-						<LocateButton onPress={() => setLocateNonce(n => n + 1)} />
+						{/* One tap per state, the way Google Maps' own button works:
+						    free → follow (north-up) → navigation (heading-up, tilted).
+						    Filled AND a different glyph per state — a state is never
+						    carried by colour alone. */}
+						<Pressable
+							onPress={() =>
+								setFollowMode(m => (m === 'off' ? 'region' : m === 'region' ? 'navigation' : 'off'))
+							}
+							accessibilityRole="button"
+							accessibilityLabel={copy.activeTrip.followModes[followMode]}
+							style={[
+								elevation.float,
+								{
+									backgroundColor: followMode === 'off' ? theme.surface.default : theme.brand.default,
+									borderColor: followMode === 'off' ? theme.border.subtle : theme.brand.default
+								}
+							]}
+							className="h-14 w-14 items-center justify-center rounded-full border-[1.5px] active:opacity-80"
+						>
+							<MaterialIcons
+								name={followMode === 'navigation' ? 'navigation' : followMode === 'region' ? 'gps-fixed' : 'gps-not-fixed'}
+								size={24}
+								color={followMode === 'off' ? theme.icon.secondary : theme.text.onBrand}
+							/>
+						</Pressable>
 					</>
 				}
 				controlsBottom={520}

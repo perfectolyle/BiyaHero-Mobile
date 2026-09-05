@@ -364,6 +364,7 @@ export const activeTrip = {
 	notLiveBanner: 'Not visible — tap to fix',
 	notLiveAction: 'Passengers cannot see you. Tap to open Location settings.',
 	openProfile: 'Open your profile',
+	followModes: { off: 'Free map', region: 'Follow me', navigation: 'Navigation' },
 	heading: dest => `Bound for ${dest}`,
 	elapsed: (mins, km) => `${mins} min in · ${km} km travelled`,
 	change: 'Change',

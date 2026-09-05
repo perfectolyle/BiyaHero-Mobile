@@ -354,6 +354,13 @@ export const startTrip = (destination, { routeId, position, destCoords, via } = 
 			// Tarlac driver can never be handed a Metro Manila corridor.
 			...(position ? { lat: position.latitude, lng: position.longitude } : {}),
 			...(destCoords ? { dest_lat: destCoords.latitude, dest_lng: destCoords.longitude } : {})
+		}, {
+			// Starting a trip builds a route: a geocode and a road match, on a
+			// server that may be waking from idle. The 10 s default fired while
+			// the server was still working — it then finished and CREATED the
+			// trip, so the driver was told "something went wrong" about a run
+			// that had in fact begun.
+			timeout: 30000
 		})
 		.then(res => res.data?.data)
 
@@ -365,7 +372,7 @@ export const rerouteTrip = (tripId, destination, { routeId, position, destCoords
 			...(routeId ? { route_id: routeId } : {}),
 			...(position ? { lat: position.latitude, lng: position.longitude } : {}),
 			...(destCoords ? { dest_lat: destCoords.latitude, dest_lng: destCoords.longitude } : {})
-		})
+		}, { timeout: 30000 })
 		.then(res => res.data?.data)
 
 export const pingTrip = (tripId, { latitude, longitude, street, distanceKm }) =>

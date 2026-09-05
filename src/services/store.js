@@ -804,7 +804,22 @@ export const useStore = create((set, get) => ({
 		}
 
 		const position = await currentFix()
-		const trip = await api.startTrip(destination, { routeId, position, destCoords, via })
+
+		let trip
+		try {
+			trip = await api.startTrip(destination, { routeId, position, destCoords, via })
+		} catch (e) {
+			// No response is not "no trip". A phone whose signal dropped mid-request
+			// — this one's log showed DNS failing every few minutes — never hears
+			// the 201, but the server had already built the route and started the
+			// run. Telling the driver it failed, while commuters could already see
+			// them moving, was the "something went wrong" they reported. Ask the
+			// server what it holds before believing the silence.
+			if (e?.response) throw e
+			trip = await api.fetchCurrentTrip().catch(() => null)
+			if (!trip) throw e
+		}
+
 		set({ trip, isBroadcasting: true })
 		await get().beginBroadcast(trip.id)
 		return trip

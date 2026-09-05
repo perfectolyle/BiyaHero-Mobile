@@ -429,6 +429,12 @@ export const activeTrip = {
 	notLiveBanner: 'Hindi ka nakikita — pindutin para ayusin',
 	notLiveAction: 'Hindi ka nakikita ng mga pasahero. Pindutin para buksan ang Location settings.',
 	openProfile: 'Buksan ang profile mo',
+	/**
+	 * The camera control on the trip screen, one tap per state: free map →
+	 * follow (north-up) → navigation (heading-up, tilted, the road ahead on
+	 * top). Panning the map drops back to free.
+	 */
+	followModes: { off: 'Malayang mapa', region: 'Sundan ako', navigation: 'Nabigasyon' },
 	heading: dest => `Papuntang ${dest}`,
 	elapsed: (mins, km) => `${mins} min na · ${km} km ang nabiyahe`,
 	change: 'Palitan',

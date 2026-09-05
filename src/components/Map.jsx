@@ -85,6 +85,43 @@ const MIN_FIT_SPAN_DEG = 0.003
 /** How a single place is framed: the neighbourhood, with a few streets around it. */
 const PLACE_ZOOM = 15
 
+/*
+ * Navigation follow — the driver's view. Zoom, tilt and lead distance are
+ * Google Maps' own proportions, near enough: close enough to read the next
+ * turn, tilted enough that the road ahead runs up the screen, and aimed far
+ * enough ahead that the vehicle sits low, above the sheet, not under it.
+ */
+const NAV_ZOOM = 17
+const NAV_PITCH = 50
+const NAV_LEAD_M = 90
+/** Fixes closer than this carry no usable bearing — a parked jeepney jitters. */
+const NAV_HEADING_MIN_M = 4
+
+const RAD = Math.PI / 180
+
+/** Compass bearing from a to b, in degrees clockwise from north. */
+const bearing = (a, b) => {
+	const lat1 = a.latitude * RAD
+	const lat2 = b.latitude * RAD
+	const dLng = (b.longitude - a.longitude) * RAD
+	const y = Math.sin(dLng) * Math.cos(lat2)
+	const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng)
+
+	return (Math.atan2(y, x) / RAD + 360) % 360
+}
+
+/** The point `metres` along `headingDeg` from `p`. */
+const offsetM = (p, headingDeg, metres) => {
+	const d = metres / 6371000
+	const brg = headingDeg * RAD
+	const lat1 = p.latitude * RAD
+	const lng1 = p.longitude * RAD
+	const lat2 = Math.asin(Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(brg))
+	const lng2 = lng1 + Math.atan2(Math.sin(brg) * Math.sin(d) * Math.cos(lat1), Math.cos(d) - Math.sin(lat1) * Math.sin(lat2))
+
+	return { latitude: lat2 / RAD, longitude: lng2 / RAD }
+}
+
 const lerp = (a, b, t) => a + (b - a) * t
 
 /** Where a pin is right now, or its raw fix if nothing is interpolating it. */
@@ -659,6 +696,9 @@ export const Map = ({
 	selectedId,
 	onSelect,
 	onMapPress,
+	// The user dragged the map. A screen that is following a vehicle turns
+	// that off here — a camera fighting a finger is worse than either alone.
+	onUserPan = null,
 	// The FULL corridor. Map trims it at the vehicle itself, because the line
 	// is consumed at a position that only exists here — see useGlide.
 	route,
@@ -683,6 +723,10 @@ export const Map = ({
 	// OFF the commuter pans freely. A one-shot recentre was the earlier shape,
 	// but a jeepney that is moving walks straight back out of frame.
 	follow = false,
+	// 'region': north-up, fixed span, the vehicle biased above the sheet.
+	// 'navigation': heading-up and tilted, the road ahead at the top of the
+	// screen and the vehicle low in it — a driver's view, not a commuter's.
+	followMode = 'region',
 	// Which glide leg to track — 'v:<id>'. Following the INTERPOLATED position
 	// rather than the raw fix is what makes it read as a camera on a moving
 	// vehicle instead of a jump every eight seconds.
@@ -917,9 +961,35 @@ export const Map = ({
 		// which is the whole point of it being a toggle.
 		const span = 0.012
 
+		// Navigation keeps the last good heading: a vehicle waiting at a light
+		// produces fixes a metre apart whose bearing is noise, and swinging the
+		// whole map round on that is the one thing this view must never do.
+		let heading = null
+
 		const track = () => {
 			const here = at(legs, followKey, centerOnRef.current)
 			if (!here || !mapRef.current) return
+
+			if (followMode === 'navigation') {
+				const leg = legs[followKey]
+				const moved = leg ? distanceM(leg.from, leg.to) : null
+				if (moved !== null && moved >= NAV_HEADING_MIN_M) heading = bearing(leg.from, leg.to)
+
+				// Aimed AHEAD of the vehicle, not at it: with the camera centred on
+				// the vehicle it sits mid-screen and the sheet covers the road in
+				// front of it. Leading along the heading puts the vehicle low and
+				// the next few hundred metres on top — Google's framing.
+				mapRef.current.animateCamera(
+					{
+						center: heading == null ? here : offsetM(here, heading, NAV_LEAD_M),
+						heading: heading ?? 0,
+						pitch: NAV_PITCH,
+						zoom: NAV_ZOOM
+					},
+					{ duration: FOLLOW_STEP_MS }
+				)
+				return
+			}
 
 			// The longitude span must match the map's aspect ratio. Equal deltas on a
 			// tall screen make Google widen the latitude span to fit, which dilutes the
@@ -938,14 +1008,25 @@ export const Map = ({
 		track()
 		const timer = setInterval(track, FOLLOW_STEP_MS)
 
-		return () => clearInterval(timer)
-	}, [follow, followKey, centerBias])
+		return () => {
+			clearInterval(timer)
+			// Leaving navigation puts the camera back flat and north-up. The
+			// region view and a freed map cannot express a tilt, and a map left
+			// leaning at 50° reads as broken rather than as a choice.
+			if (followMode === 'navigation') mapRef.current?.animateCamera({ heading: 0, pitch: 0 }, { duration: 300 })
+		}
+	}, [follow, followKey, followMode, centerBias])
 
 	// Frame the matches ONCE per fitKey — a new search, a new route. The
 	// points array is rebuilt on every 8 s poll, and re-fitting on that would
 	// yank the camera back the moment anyone pans or zooms.
 	const lastFitKey = useRef(null)
 	useEffect(() => {
+		// A following camera is already committed. Framing the whole route
+		// underneath it zoomed the driver out to the entire corridor for one
+		// frame before the follow snapped them back in.
+		if (follow) return
+
 		const points = fitTo?.filter(Boolean)
 
 		// Nothing to frame — the search was cleared, or its matches have not
@@ -982,7 +1063,7 @@ export const Map = ({
 			edgePadding: { top: 120, right: 80, bottom: 380, left: 80 },
 			animated: true
 		})
-	}, [fitTo, fitKey, mapReady])
+	}, [fitTo, fitKey, mapReady, follow])
 
 	// Hold the map back until the saved region is known, otherwise it mounts on
 	// the default and visibly jumps.
@@ -1002,6 +1083,7 @@ export const Map = ({
 				// otherwise swallow the tap, so they clear the focus too.
 				onPress={onMapPress}
 				onPoiClick={onMapPress}
+				onPanDrag={() => onUserPan?.()}
 				onRegionChangeComplete={next => {
 					setViewport(next)
 					if (rememberRegion) AsyncStorage.setItem(REGION_KEY, JSON.stringify(next)).catch(() => {})
