@@ -7,6 +7,7 @@ import { FormScroll } from '@/components/ui/FormScroll'
 import { Txt } from '@/components/ui/Txt'
 import { Header } from '@/components/ui/Header'
 import { Field } from '@/components/ui/Field'
+import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
 import { VehicleGlyph } from '@/components/VehicleGlyph'
 import { useRegistration } from '@/services/registration'
@@ -116,30 +117,17 @@ export default function VehicleDetails() {
 						<Txt variant="caption" className="text-fg-secondary">{copy.vehicleDetails.body}</Txt>
 					</View>
 
-					<View className="gap-2">
-						<Txt variant="labelS" className="text-fg-secondary">{copy.vehicleDetails.typeLabel}</Txt>
-						<View className="flex-row flex-wrap gap-2">
-							{VEHICLE_TYPES.map(type => {
-								const active = vehicle_type === type
-								return (
-									<Pressable
-										key={type}
-										onPress={() => update({ vehicle_type: type })}
-										accessibilityRole="radio"
-										accessibilityState={{ selected: active }}
-										className={`min-w-[47%] flex-1 items-center gap-1 rounded-lg border-2 py-3 active:opacity-80 ${
-											active ? 'border-brand bg-brand-subtle' : 'border-line-subtle bg-surface'
-										}`}
-									>
-										<VehicleGlyph type={type} width={30} color={theme.icon.primary} />
-										<Txt variant="labelL" className={active ? 'text-fg' : 'text-fg-secondary'}>
-											{VEHICLE_LABELS[type]}
-										</Txt>
-									</Pressable>
-								)
-							})}
-						</View>
-					</View>
+					{/* One row instead of a two-by-two grid of tiles. The grid cost
+					    ~270dp for a choice made once and usually left on its default,
+					    and it is what pushed the rest of this step off the screen. The
+					    glyph is kept, so the type is still readable at a glance. */}
+					<Select
+						label={copy.vehicleDetails.typeLabel}
+						value={vehicle_type}
+						onChange={value => update({ vehicle_type: value })}
+						options={VEHICLE_TYPES.map(t => ({ value: t, label: VEHICLE_LABELS[t] }))}
+						renderIcon={t => <VehicleGlyph type={t} width={28} color={theme.icon.primary} />}
+					/>
 
 					<View className="gap-2">
 						<Txt variant="labelS" className="text-fg-secondary">{copy.vehicleDetails.photoLabel}</Txt>
