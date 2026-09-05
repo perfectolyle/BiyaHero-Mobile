@@ -101,7 +101,17 @@ export const mapHome = {
 		{ key: 'ejeep', label: 'E-Jeep' },
 		{ key: 'bus', label: 'Bus' },
 		{ key: 'uv_express', label: 'UV Express' }
-	]
+	],
+	/**
+	 * The distance chips. Applied on the phone — the server never learns where
+	 * the commuter is from a filter — and only offered once the location toggle
+	 * is on, because "within 3 km" of nowhere is not a filter.
+	 */
+	radius: {
+		nearMe: 'Malapit sa akin',
+		any: 'Kahit gaano kalayo',
+		km: n => `${n} km`
+	}
 }
 
 export const search = {

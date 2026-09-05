@@ -256,6 +256,13 @@ export const useStore = create((set, get) => ({
 	vehiclesFor: null,
 	destinationResolved: true,
 	vehicleFilter: 'all',
+	/**
+	 * Only vehicles within this many km of the commuter — null for no limit.
+	 * Applied on the phone, never sent: the server does not learn the commuter's
+	 * position from a filter any more than from a listing.
+	 */
+	radiusKm: null,
+	setRadiusKm: radiusKm => set({ radiusKm }),
 	selectedVehicleId: null,
 	recentSearches: [],
 
@@ -699,6 +706,14 @@ export const useStore = create((set, get) => ({
 		if (fleetSocket) {
 			fleetSocket()
 			fleetSocket = null
+		}
+
+		// Both fleet channels, or the batched one keeps feeding thirty-one moving
+		// pins into a map the commuter cannot see — the home screen stays mounted
+		// under the vehicle detail, and every burst re-ran its glide there.
+		if (fleetBatchSocket) {
+			fleetBatchSocket()
+			fleetBatchSocket = null
 		}
 	},
 

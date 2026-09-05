@@ -95,7 +95,12 @@ export const mapHome = {
 		{ key: 'ejeep', label: 'E-Jeep' },
 		{ key: 'bus', label: 'Bus' },
 		{ key: 'uv_express', label: 'UV Express' }
-	]
+	],
+	radius: {
+		nearMe: 'Near me',
+		any: 'Any distance',
+		km: n => `${n} km`
+	}
 }
 
 export const search = {

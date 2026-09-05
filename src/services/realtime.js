@@ -89,7 +89,13 @@ const watchForSilence = timeoutMs => {
 	activityTimer = setInterval(() => {
 		const quiet = Date.now() - lastFrameAt
 
-		if (awaitingPong && quiet > timeoutMs / 2) return socket?.close()
+		// A full activity_timeout to answer, not half of one. The server sends
+		// that value as 30 s, so half was 15 s — and a pong is processed on the
+		// JS thread, so a phone drawing two maps at once, or a Reverb sharing a
+		// tenth of a CPU with the API, could miss that window with the
+		// connection perfectly healthy. Closing then is what "losing connection
+		// when I open a vehicle" actually was.
+		if (awaitingPong && quiet > timeoutMs) return socket?.close()
 
 		if (quiet > timeoutMs) {
 			awaitingPong = true

@@ -42,6 +42,8 @@ export default function MapHome() {
 	const destinationResolved = useStore(s => s.destinationResolved)
 	const selectedVehicleId = useStore(s => s.selectedVehicleId)
 	const setVehicleFilter = useStore(s => s.setVehicleFilter)
+	const radiusKm = useStore(s => s.radiusKm)
+	const setRadiusKm = useStore(s => s.setRadiusKm)
 	const clearDestination = useStore(s => s.clearDestination)
 	const selectVehicle = useStore(s => s.selectVehicle)
 	const startPolling = useStore(s => s.startPolling)
@@ -132,12 +134,27 @@ export default function MapHome() {
 		return null
 	}, [selected, selectedRoute, destination, searchedPosition])
 
+	// Whether "near me" means anything right now. Off, or on but with the fix
+	// still in flight (the watcher can die after a seed fix, so myLocation alone
+	// is not proof), and the server's order stands.
+	const located = myLocationOn && !!myLocation
+
+	// The vehicles the map and the list agree on. The distance chip is applied
+	// here, on the phone: the server never learns where the commuter is from a
+	// filter any more than from a listing. A stale vehicle is judged by its last
+	// known position — that is the honest answer to "is it within 3 km".
+	const shownVehicles = useMemo(() => {
+		if (!located || radiusKm == null) return vehicles
+		const limit = radiusKm * 1000
+		return vehicles.filter(v => (distanceM(myLocation, v.position) ?? Infinity) <= limit)
+	}, [vehicles, located, radiusKm, myLocation])
+
 	const fitTo = useMemo(
 		() =>
 			destination
-				? [...vehicles.map(v => v.position), destinationPin].filter(Boolean)
+				? [...shownVehicles.map(v => v.position), destinationPin].filter(Boolean)
 				: null,
-		[destination, vehicles, destinationPin]
+		[destination, shownVehicles, destinationPin]
 	)
 
 	// Straight from the server, so the promise on screen matches the filter
@@ -153,8 +170,8 @@ export default function MapHome() {
 	// citywide fleet is still in state), and the filter chips narrow it again;
 	// keying on the ids re-frames for those and stays put while they only move.
 	const fitKey = useMemo(
-		() => (destination ? `${destination.name}|${vehicleFilter}|${vehicles.map(v => v.id).join(',')}` : 'none'),
-		[destination, vehicleFilter, vehicles]
+		() => (destination ? `${destination.name}|${vehicleFilter}|${radiusKm}|${shownVehicles.map(v => v.id).join(',')}` : 'none'),
+		[destination, vehicleFilter, radiusKm, shownVehicles]
 	)
 
 	// Stable identity: memoised pins and cards compare onSelect/onPress by
@@ -168,17 +185,19 @@ export default function MapHome() {
 	// live vehicles nearest-first, stale ones after (their "position" is only
 	// where they were last seen). Distances are ranked in 100 m buckets with an
 	// id tie-break so GPS jitter and 8 s hops don't shuffle cards under the
-	// user's finger. Off (or failed — the watcher can die after a seed fix, so
-	// myLocation alone is not proof), the server's freshest-ping order stands.
-	// A destination search arrives already ordered by how close each route
-	// runs to it — that ordering answers the question being asked, so it wins
-	// over "nearest to me".
-	const located = myLocationOn && !!myLocation && !destination
+	// user's finger. Off, the server's order stands.
+	//
+	// A destination no longer switches this off. The server has already kept
+	// only the rides that pass the place, ordered by how close their route runs
+	// to it — but two jeepneys that both pass Baclaran are not the same answer
+	// when one is 300 m from the commuter and the other is in Alabang. Which
+	// reaches ME first is still the question; the destination only narrows who
+	// is eligible.
 	const listVehicles = useMemo(() => {
-		if (!located) return vehicles
+		if (!located) return shownVehicles
 		const rank = v => Math.round((distanceM(myLocation, v.position) ?? Infinity) / 100)
-		return [...vehicles].sort((a, b) => (a.stale - b.stale) || (rank(a) - rank(b)) || (a.id - b.id))
-	}, [vehicles, located, myLocation])
+		return [...shownVehicles].sort((a, b) => (a.stale - b.stale) || (rank(a) - rank(b)) || (a.id - b.id))
+	}, [shownVehicles, located, myLocation])
 
 	// Crosshair: the ONLY way the app ever asks for a commuter location. It
 	// rides in the map's own control column so it and the layer button share a
@@ -202,7 +221,7 @@ export default function MapHome() {
 			<StatusBar style={statusBar} />
 			<Map
 				rememberRegion
-				vehicles={vehicles}
+				vehicles={shownVehicles}
 				selectedId={selectedVehicleId}
 				onSelect={openVehicle}
 				onMapPress={() => selectVehicle(null)}
@@ -246,8 +265,8 @@ export default function MapHome() {
 								{awaitingFirstReply
 									? copy.common.loading
 									: destination
-										? copy.search.resultsTitle(vehicles.length, destination.name)
-										: copy.mapHome.activeCount(vehicles.length)}
+										? copy.search.resultsTitle(shownVehicles.length, destination.name)
+										: copy.mapHome.activeCount(shownVehicles.length)}
 							</Txt>
 							<Txt variant="caption" className="text-fg-secondary">
 								{destination
@@ -267,6 +286,27 @@ export default function MapHome() {
 									onPress={() => setVehicleFilter(f.key)}
 								/>
 							))}
+						</View>
+
+						{/* Distance. Its own row, because it answers a different
+						    question from the type chips — not WHAT is out there
+						    but what can actually reach me. Until the location
+						    toggle is on there is nothing to measure from, so the
+						    row is a single chip that turns it on; "within 3 km"
+						    of nowhere is not a filter. */}
+						<View className="flex-row flex-wrap gap-2">
+							{located ? (
+								[null, 1, 3, 5].map(km => (
+									<Chip
+										key={km ?? 'any'}
+										label={km == null ? copy.mapHome.radius.any : copy.mapHome.radius.km(km)}
+										active={radiusKm === km}
+										onPress={() => setRadiusKm(km)}
+									/>
+								))
+							) : (
+								<Chip label={copy.mapHome.radius.nearMe} active={false} onPress={enableMyLocation} />
+							)}
 						</View>
 					</View>
 				}
