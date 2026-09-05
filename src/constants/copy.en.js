@@ -236,7 +236,7 @@ export const vehicleDetails = {
 	editTitle: 'Edit vehicle',
 	save: 'Save changes',
 	saved: 'Changes saved',
-	editPlateNote: 'The plate is half of your login — if you change it, use the new one to log in.'
+	editPlateNote: 'The plate is part of your login — if you change it, use the new one to log in.'
 }
 
 export const licence = {
@@ -421,7 +421,7 @@ export const help = {
 		},
 		{
 			q: 'How do I log in on another phone?',
-			a: "Enter your licence number and your vehicle's plate. No password and no SMS code."
+			a: "Enter your licence number, your vehicle's plate, and your password. No SMS code."
 		},
 		{
 			q: 'Can drivers see passengers?',
@@ -429,7 +429,7 @@ export const help = {
 		},
 		{
 			q: 'How do I change my plate or vehicle?',
-			a: 'On your profile, tap "Edit". Remember: the plate is half of your login.'
+			a: 'On your profile, tap "Edit". Remember: the plate is part of your login.'
 		}
 	]
 }

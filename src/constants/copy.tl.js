@@ -262,7 +262,7 @@ export const vehicleDetails = {
 	save: 'I-save ang pagbabago',
 	saved: 'Na-save ang pagbabago',
 	/** The plate is half the login credential, so editing it changes the login. */
-	editPlateNote: 'Ang plaka ay kalahati ng pag-log in mo — kapag pinalitan, ang bago na ang gagamitin.'
+	editPlateNote: 'Bahagi ng pag-log in mo ang plaka — kapag pinalitan, ang bago na ang gagamitin.'
 }
 
 export const history = {
@@ -286,7 +286,7 @@ export const help = {
 		},
 		{
 			q: 'Paano mag-log in sa ibang telepono?',
-			a: 'Ilagay ang numero ng lisensya at plaka ng sasakyan mo. Walang password at walang SMS code.'
+			a: 'Ilagay ang numero ng lisensya, ang plaka ng sasakyan mo, at ang password mo. Walang SMS code.'
 		},
 		{
 			q: 'Nakikita ba ng mga drayber ang mga pasahero?',
@@ -294,7 +294,7 @@ export const help = {
 		},
 		{
 			q: 'Paano papalitan ang plaka o sasakyan?',
-			a: 'Sa profile, i-tap ang "Baguhin". Tandaan: ang plaka ang kalahati ng pag-log in mo.'
+			a: 'Sa profile, i-tap ang "Baguhin". Tandaan: bahagi ng pag-log in mo ang plaka.'
 		}
 	]
 }
