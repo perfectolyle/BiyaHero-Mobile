@@ -96,7 +96,12 @@ export const fetchRealtimeConfig = () =>
 
 export const fetchVehicle = (id, { geometry = true } = {}) =>
 	client
-		.get(`/active-vehicles/${id}`, geometry ? undefined : { params: { geometry: 0 } })
+		// The geometry request carries the whole route — 741 points, ~26 KB on
+		// the longest demo corridor — and it is the FIRST thing the detail
+		// screen asks for. On a phone whose signal is flapping, the 10 s default
+		// was failing it while the 600-byte polls behind it went through, and a
+		// failed first load is what the screen reported as "no connection".
+		.get(`/active-vehicles/${id}`, geometry ? { timeout: 30000 } : { params: { geometry: 0 } })
 		.then(res => normaliseVehicle(res.data?.data ?? res.data))
 
 /**

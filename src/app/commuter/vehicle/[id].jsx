@@ -53,11 +53,17 @@ export default function VehicleDetail() {
 	const watchingTripId = useStore(s => s.watchingTripId)
 	const toggleWatchingTrip = useStore(s => s.toggleWatchingTrip)
 	const stopWatchingTrip = useStore(s => s.stopWatchingTrip)
-	const [vehicle, setVehicle] = useState(null)
+	// The card Map Home already holds for this vehicle — same normaliser, same
+	// shape, everything but the route line. Opening from it means the screen
+	// is on the commuter's eyes before the network is asked for anything, and
+	// a first request that fails cannot present as "no connection" for a
+	// vehicle they were looking at a second ago.
+	const seed = useStore(s => s.vehicles.find(v => String(v.id) === String(id)))
+	const [vehicle, setVehicle] = useState(seed ?? null)
 	// The trip this screen actually saw, kept so a 404 can only ever withdraw
 	// the consent it belongs to.
 	const seenTripId = useRef(null)
-	const [loading, setLoading] = useState(true)
+	const [loading, setLoading] = useState(!seed)
 	const [missing, setMissing] = useState(false)
 	const [following, setFollowing] = useState(false)
 
@@ -106,15 +112,27 @@ export default function VehicleDetail() {
 				})
 				// A 404 means the driver ended the trip. Anything else is a network
 				// problem, and reporting that as "the ride is gone" would be a lie.
-				.catch(e => !cancelled && e?.response?.status === 404 && setMissing(true))
+				.catch(e => {
+					if (cancelled) return
+					if (e?.response?.status === 404) return setMissing(true)
+
+					// The first load never landed and the screen has nothing to
+					// show: ask again in two seconds, not eight. Eight is the poll
+					// cadence for a screen that is already drawn; a blank one with
+					// "no connection" on it should not have to wait a full cycle
+					// for a blip to pass.
+					if (drawnRoute === null) retry = setTimeout(load, 2000)
+				})
 				.finally(() => !cancelled && setLoading(false))
 
+		let retry = null
 		load()
 		const timer = setInterval(load, PING_INTERVAL_MS)
 
 		return () => {
 			cancelled = true
 			clearInterval(timer)
+			if (retry) clearTimeout(retry)
 		}
 	}, [id])
 
