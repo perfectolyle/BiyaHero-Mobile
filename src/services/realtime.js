@@ -23,6 +23,8 @@ const RECONNECT_MIN_MS = 2000
 const RECONNECT_MAX_MS = 30_000
 
 let socket = null
+/** True between open() starting and the WebSocket existing — see open(). */
+let opening = false
 let config = null
 let socketId = null
 let reconnectDelay = RECONNECT_MIN_MS
@@ -126,29 +128,38 @@ const scheduleReconnect = () => {
 }
 
 const open = async () => {
-	if (socket || closedOnPurpose) return
+	// `opening` closes the gap `socket` cannot: the config fetch below is
+	// awaited, and two subscribe() calls on a cold start — the fleet channel
+	// and the batched one — both passed this guard before either had a socket
+	// to show for it. Two WebSockets opened; the first became an orphan whose
+	// later close scheduled a reconnect against a connection that was fine.
+	if (socket || opening || closedOnPurpose) return
+	opening = true
 
-	// A server that answered "no socket" is a settled answer. A request that
-	// FAILED is not — a cold start or a dead spot at launch would otherwise
-	// disable real-time for the whole session.
-	if (!config) {
-		config = await fetchRealtimeConfig().catch(() => null)
-		if (!config) return scheduleReconnect()
-	}
-
-	if (!config.enabled || !config.key) return
-
-	const scheme = config.scheme === 'https' ? 'wss' : 'ws'
-	const url = `${scheme}://${config.host}:${config.port}/app/${config.key}?protocol=${PROTOCOL}&client=biyahero&version=1.0`
-
-	let ws
 	try {
-		ws = new WebSocket(url)
-	} catch {
-		return scheduleReconnect()
+		// A server that answered "no socket" is a settled answer. A request that
+		// FAILED is not — a cold start or a dead spot at launch would otherwise
+		// disable real-time for the whole session.
+		if (!config) {
+			config = await fetchRealtimeConfig().catch(() => null)
+			if (!config) return scheduleReconnect()
+		}
+
+		if (!config.enabled || !config.key) return
+
+		const scheme = config.scheme === 'https' ? 'wss' : 'ws'
+		const url = `${scheme}://${config.host}:${config.port}/app/${config.key}?protocol=${PROTOCOL}&client=biyahero&version=1.0`
+
+		try {
+			socket = new WebSocket(url)
+		} catch {
+			return scheduleReconnect()
+		}
+	} finally {
+		opening = false
 	}
 
-	socket = ws
+	const ws = socket
 
 	ws.onmessage = event => {
 		lastFrameAt = Date.now()

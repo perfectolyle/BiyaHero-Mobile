@@ -1028,7 +1028,16 @@ export const Map = ({
 		// something to follow: before the first GPS fix the follow has no
 		// position, and skipping the fit then left the driver on an unframed
 		// map with the route somewhere off screen.
-		if (follow && at(legs, followKey, centerOnRef.current)) return
+		//
+		// The key is recorded even when the fit yields, because the follow IS
+		// the framing for this key. Without that, the moment the driver panned
+		// — which turns follow off — this effect re-ran, saw a key it had never
+		// fitted, and yanked the camera out to the whole route right under
+		// their finger.
+		if (follow && at(legs, followKey, centerOnRef.current)) {
+			lastFitKey.current = fitKey
+			return
+		}
 
 		const points = fitTo?.filter(Boolean)
 

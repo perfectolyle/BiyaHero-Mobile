@@ -715,6 +715,14 @@ export const useStore = create((set, get) => ({
 			fleetBatchSocket()
 			fleetBatchSocket = null
 		}
+
+		// And the listener that sets the poll cadence, or the next socket
+		// up/down transition would call schedule() and quietly restart the poll
+		// for a screen that is not on top — polling stopped is polling stopped.
+		if (socketState) {
+			socketState()
+			socketState = null
+		}
 	},
 
 	/* --------------------------------------------------------------- driver */

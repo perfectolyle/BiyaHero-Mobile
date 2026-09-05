@@ -66,6 +66,11 @@ export const useRegistration = create(set => ({
 			license_no: '',
 			license_expires_at: '',
 			password: '',
-			licencePhotoUri: null
+			licencePhotoUri: null,
+			// The vehicle photo too — both the local pick and the URL an edit
+			// session held. Left in place, a fresh sign-up on a shared phone
+			// opened on the previous driver's jeepney.
+			vehiclePhotoUri: null,
+			vehiclePhotoUrl: null
 		})
 }))

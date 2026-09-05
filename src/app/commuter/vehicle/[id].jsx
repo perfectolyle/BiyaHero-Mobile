@@ -120,8 +120,15 @@ export default function VehicleDetail() {
 					// show: ask again in two seconds, not eight. Eight is the poll
 					// cadence for a screen that is already drawn; a blank one with
 					// "no connection" on it should not have to wait a full cycle
-					// for a blip to pass.
-					if (drawnRoute === null) retry = setTimeout(load, 2000)
+					// for a blip to pass. ONE pending retry at a time: the 8 s poll
+					// also calls load(), and every failing tick would otherwise
+					// start another 2 s chain alongside the ones already running.
+					if (drawnRoute === null && !retry) {
+						retry = setTimeout(() => {
+							retry = null
+							load()
+						}, 2000)
+					}
 				})
 				.finally(() => !cancelled && setLoading(false))
 
@@ -167,9 +174,15 @@ export default function VehicleDetail() {
 
 	// Frame route + destination ONCE per trip. Recomputing per poll would yank
 	// the camera back every 8 s and fight anyone panning around the route.
+	// Keyed on the waypoints ARRAY, not the route id. Opened from the card Map
+	// Home already holds, the vehicle arrives knowing its route's id but not its
+	// line; keyed on the id, this memo settled on [destination] before the
+	// geometry landed and never looked again, so the route drew under a camera
+	// that had never framed it. The load effect carries the same array forward
+	// once fetched, so this does not churn on every poll either.
 	const fitTo = useMemo(
 		() => [...(vehicle?.route?.waypoints ?? []), destinationPin].filter(Boolean),
-		[vehicle?.route?.id, destinationPin]
+		[vehicle?.route?.waypoints, destinationPin]
 	)
 
 	if (loading) {
@@ -211,7 +224,10 @@ export default function VehicleDetail() {
 				routeAnchor={vehicle.id}
 				destinationPin={destinationPin}
 				fitTo={fitTo}
-				fitKey={vehicle.route?.id ?? vehicle.tripId}
+				// The waypoint count is part of the key: the card the screen opens
+				// from knows the route's id but not its line, and the one frame that
+				// matters is the one after the line arrives.
+				fitKey={`${vehicle.route?.id ?? vehicle.tripId}|${vehicle.route?.waypoints?.length ?? 0}`}
 				myLocation={myLocation}
 				// Follow tracks the glide, so the camera reads as committed to a
 				// moving vehicle rather than jumping once per ping.

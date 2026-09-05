@@ -108,7 +108,9 @@ export default function DriverLogin() {
 						<Button
 							label={copy.login.noAccount}
 							tone="secondary"
-							onPress={() => router.replace('/driver/vehicle')}
+							// Pop when registration is what we came from, or the stack held
+							// two copies of the vehicle form and Back appeared to do nothing.
+							onPress={() => (router.canGoBack() ? router.back() : router.replace('/driver/vehicle'))}
 						/>
 					</View>
 				</FormScroll>
