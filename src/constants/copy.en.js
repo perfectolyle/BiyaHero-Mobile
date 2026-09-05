@@ -76,6 +76,8 @@ export const mapHome = {
 	locationServicesOff: "Your phone's Location (GPS) is off. Turn it on to see where you are.",
 	layers: 'Map type',
 	layerNames: { standard: 'Default', hybrid: 'Satellite', terrain: 'Terrain' },
+	pins: 'Vehicles on the map',
+	pinModes: { normal: 'Show', dim: 'Faded', hide: 'Hide' },
 	myLocationOn: 'Now showing your location',
 	myLocationOff: 'Your location is hidden',
 	/**

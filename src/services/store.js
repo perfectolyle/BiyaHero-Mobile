@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Location from 'expo-location'
 import * as api from './api'
-import { subscribe, disconnectRealtime } from './realtime'
+import { subscribe, disconnectRealtime, onRealtimeState } from './realtime'
 import { PING_INTERVAL_MS, STALE_AFTER_MS } from '@/theme/tokens'
 import { Vibration } from 'react-native'
 import { distanceM, placeLabel, NEAR_M, NEAR_RESET_M } from './geo'
@@ -13,6 +13,20 @@ const KEYS = { role: 'biyahero.role', token: 'biyahero.token', driver: 'biyahero
 const MAX_RECENT = 3
 
 let pollTimer = null
+/** The simulator's one-frame-per-tick channel; real drivers still send vehicle.moved. */
+let fleetBatchSocket = null
+/** Unsubscribe for the socket up/down listener that sets the poll cadence. */
+let socketState = null
+
+/**
+ * How often to re-read the listing while the socket is UP.
+ *
+ * Positions arrive on the socket; the poll then only carries MEMBERSHIP — a
+ * jeepney that started or ended a trip is not a move, so it arrives on no
+ * channel. That changes every few minutes, not every eight seconds, and each
+ * poll was 22 KB and a fresh array identity for every pin on the map.
+ */
+const RECONCILE_INTERVAL_MS = 60_000
 let broadcastWatcher = null
 let broadcastGuard = null
 let myLocationWatcher = null
@@ -637,8 +651,22 @@ export const useStore = create((set, get) => ({
 		get().checkProximity()
 	},
 
+	/**
+	 * The simulator sends the whole fleet's tick as ONE frame instead of one
+	 * frame per vehicle — thirty-one broadcasts every eight seconds was most of
+	 * what a tick cost the server. Each entry is exactly a vehicle.moved payload,
+	 * so it goes through the same buffered path and the glide sees no difference.
+	 */
+	applyFleetMoved: payload => {
+		for (const moved of payload?.vehicles ?? []) get().applyVehicleMoved(moved)
+	},
+
 	startPolling: () => {
-		if (pollTimer) clearInterval(pollTimer)
+		const schedule = ms => {
+			if (pollTimer) clearInterval(pollTimer)
+			pollTimer = setInterval(() => get().refresh(), ms)
+		}
+
 		get().refresh()
 
 		// The socket carries positions; the poll still carries MEMBERSHIP — a
@@ -646,9 +674,18 @@ export const useStore = create((set, get) => ({
 		// no channel. Both run, and the poll alone is enough if the socket
 		// never connects.
 		if (!fleetSocket) fleetSocket = subscribe('fleet', 'vehicle.moved', get().applyVehicleMoved)
-		// 8 s, matching the driver broadcast interval — polling faster would only
-		// re-render the same pings.
-		pollTimer = setInterval(() => get().refresh(), PING_INTERVAL_MS)
+		if (!fleetBatchSocket) fleetBatchSocket = subscribe('fleet', 'fleet.moved', get().applyFleetMoved)
+
+		// The poll's cadence follows the socket. Down: every 8 s, matching the
+		// driver broadcast interval, because it is then the only source of
+		// movement. Up: once a minute, for membership only — every 8 s it was
+		// re-downloading 22 KB the socket had already delivered and handing
+		// every pin a fresh object identity to re-render against.
+		if (!socketState) {
+			socketState = onRealtimeState(state => schedule(state === 'up' ? RECONCILE_INTERVAL_MS : PING_INTERVAL_MS))
+		} else {
+			schedule(PING_INTERVAL_MS)
+		}
 	},
 
 	stopPolling: () => {

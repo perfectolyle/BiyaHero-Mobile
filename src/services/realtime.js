@@ -34,6 +34,17 @@ let awaitingPong = false
 
 /** channel name -> Set of { event, handler } */
 const listeners = {}
+
+/**
+ * Who wants to know when the socket comes up or goes down.
+ *
+ * The store polls the listing on a cadence that depends on this: every 8 s
+ * while the socket is down, because the poll is then the only source of
+ * movement, and rarely while it is up, because the socket already carries
+ * every move and a poll can only re-download what the phone is holding.
+ */
+const stateListeners = new Set()
+const announce = state => stateListeners.forEach(cb => cb(state))
 /** Channels confirmed by the server, so a reconnect knows what to re-join. */
 const joined = new Set()
 
@@ -151,6 +162,7 @@ const open = async () => {
 			watchForSilence((payload.activity_timeout ?? 120) * 1000)
 			// Re-join everything: after a drop the server remembers nothing.
 			Object.keys(listeners).forEach(join)
+			announce('up')
 			return
 		}
 
@@ -175,6 +187,7 @@ const open = async () => {
 		socketId = null
 		joined.clear()
 		stopWatchingForSilence()
+		announce('down')
 		scheduleReconnect()
 	}
 
@@ -209,6 +222,19 @@ export const subscribe = (channel, event, handler) => {
 			send({ event: 'pusher:unsubscribe', data: { channel } })
 		}
 	}
+}
+
+/**
+ * Be told when the socket comes up ('up') or goes down ('down').
+ *
+ * Fires immediately with the current state, so a caller never has to guess
+ * what happened before it asked. Returns an unsubscribe.
+ */
+export const onRealtimeState = cb => {
+	stateListeners.add(cb)
+	cb(socketId ? 'up' : 'down')
+
+	return () => stateListeners.delete(cb)
 }
 
 /**

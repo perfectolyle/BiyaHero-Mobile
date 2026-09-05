@@ -75,6 +75,16 @@ const FOLLOW_STEP_MS = 400
 const GLIDE_MIN_MS = 1000
 const GLIDE_MAX_MS = 20000
 
+/**
+ * Below this spread, a set of points is a place, not an area, and is framed
+ * as one. About 300 m — two vehicles idling at the same terminal, or a
+ * destination with nothing passing it, must not become a max-zoom rooftop.
+ */
+const MIN_FIT_SPAN_DEG = 0.003
+
+/** How a single place is framed: the neighbourhood, with a few streets around it. */
+const PLACE_ZOOM = 15
+
 const lerp = (a, b, t) => a + (b - a) * t
 
 /** Where a pin is right now, or its raw fix if nothing is interpolating it. */
@@ -182,7 +192,7 @@ const SettledMarker = ({ redrawKey, settleMs = SETTLE_MS, children, ...markerPro
 	)
 }
 
-const VehiclePin = memo(({ vehicle, position, selected, onSelect }) => {
+const VehiclePin = memo(({ vehicle, position, selected, dim = false, onSelect }) => {
 	const { theme, scheme } = useTheme()
 
 	return (
@@ -193,12 +203,18 @@ const VehiclePin = memo(({ vehicle, position, selected, onSelect }) => {
 		// Above the destination pin (60): when a vehicle arrives, the live
 		// thing wins the pixels. The commuter's own dot (100) tops both.
 		zIndex={selected ? 80 : 70}
-		redrawKey={`${vehicle.vehicle_type}|${vehicle.stale}|${selected}|${scheme}`}
+		redrawKey={`${vehicle.vehicle_type}|${vehicle.stale}|${selected}|${dim}|${scheme}`}
 		accessibilityLabel={`${vehicle.destination}, ${vehicle.plate_number}`}
 	>
 		<View
 			style={[
 				elevation.float,
+				// `dim` is the commuter's own choice from the layer menu, made
+				// because thirty badges were sitting on top of the town names
+				// they were trying to read. It is the whole badge that fades —
+				// border, glyph and shadow together — so a dimmed pin still
+				// reads as a solid object further back, not as a smudge.
+				dim && { opacity: 0.45 },
 				{
 					borderColor: vehicle.stale ? theme.border.strong : theme.route[1],
 					borderStyle: vehicle.stale ? 'dashed' : 'solid',
@@ -228,6 +244,7 @@ const VehiclePin = memo(({ vehicle, position, selected, onSelect }) => {
 	// The fleet re-renders every 8 s poll with fresh object identities; only
 	// these fields change any pixel or behaviour of a pin.
 	prev.selected === next.selected &&
+	prev.dim === next.dim &&
 	prev.onSelect === next.onSelect &&
 	prev.vehicle.stale === next.vehicle.stale &&
 	prev.vehicle.vehicle_type === next.vehicle.vehicle_type &&
@@ -534,6 +551,12 @@ const PlacePin = memo(({ place, labelled, mapType }) => {
 const LAYER_ICONS = { standard: 'map', hybrid: 'satellite-alt', terrain: 'terrain' }
 
 /**
+ * How the fleet is drawn, in the order offered. Mirrors PIN_MODES in prefs.js,
+ * which is what validates a saved value; this is only the menu.
+ */
+const PIN_ICONS = { normal: 'directions-bus', dim: 'opacity', hide: 'visibility-off' }
+
+/**
  * Google-style layer switcher. Satellite is the reason it exists: a commuter
  * who cannot place a street name can almost always recognise the roof of the
  * terminal they are standing next to.
@@ -546,6 +569,8 @@ const LayerPicker = () => {
 	const { theme } = useTheme()
 	const mapType = usePrefs(s => s.mapType)
 	const setMapType = usePrefs(s => s.setMapType)
+	const pinMode = usePrefs(s => s.pinMode)
+	const setPinMode = usePrefs(s => s.setPinMode)
 	const [open, setOpen] = useState(false)
 
 	return (
@@ -572,6 +597,37 @@ const LayerPicker = () => {
 							/>
 							<Txt variant="bodyMStrong" className={mapType === type ? 'text-brand-hover' : 'text-fg-secondary'}>
 								{copy.mapHome.layerNames[type]}
+							</Txt>
+						</Pressable>
+					))}
+
+					{/* The fleet, as a layer of its own. Thirty badges at province
+					    zoom sat on top of "Tarlac", "Angeles" and "Manila", and
+					    at street zoom on the landmark a commuter was steering by.
+					    Dimming lets the map read through them; hiding leaves the
+					    list in the sheet as the fleet's only presence. */}
+					<View className="my-1 h-px bg-line-subtle" />
+					<Txt variant="labelS" className="px-3 pb-1 pt-1 text-fg-secondary">{copy.mapHome.pins}</Txt>
+					{Object.keys(PIN_ICONS).map(mode => (
+						<Pressable
+							key={mode}
+							onPress={() => {
+								setPinMode(mode)
+								setOpen(false)
+							}}
+							accessibilityRole="button"
+							accessibilityState={{ selected: pinMode === mode }}
+							className={`flex-row items-center gap-2 rounded-md px-3 py-2 active:opacity-80 ${
+								pinMode === mode ? 'bg-brand-subtle' : ''
+							}`}
+						>
+							<MaterialIcons
+								name={PIN_ICONS[mode]}
+								size={18}
+								color={pinMode === mode ? theme.brand.hover : theme.icon.secondary}
+							/>
+							<Txt variant="bodyMStrong" className={pinMode === mode ? 'text-brand-hover' : 'text-fg-secondary'}>
+								{copy.mapHome.pinModes[mode]}
 							</Txt>
 						</Pressable>
 					))}
@@ -647,6 +703,9 @@ export const Map = ({
 	const { theme, scheme } = useTheme()
 	const { width: screenW, height: screenH } = useWindowDimensions()
 	const mapType = usePrefs(s => s.mapType)
+	// How loudly the fleet is drawn: full, dimmed so labels read through, or
+	// hidden so the map is only ground. The selected vehicle is always shown.
+	const pinMode = usePrefs(s => s.pinMode)
 	const mapRef = useRef(null)
 	const [initialRegion, setInitialRegion] = useState(rememberRegion ? null : DEFAULT_REGION)
 	// Android silently drops camera commands issued before onMapReady. fitTo is
@@ -901,6 +960,24 @@ export const Map = ({
 		if (fitKey !== undefined && fitKey === lastFitKey.current) return
 
 		lastFitKey.current = fitKey
+
+		// One point, or points on top of each other, must not be "fitted".
+		//
+		// fitToCoordinates on a single coordinate zooms in as far as the tiles
+		// go: a destination with no vehicles passing it landed the commuter on
+		// a rooftop at maximum zoom — grey roof, no roads, no labels — which
+		// read as the search having done nothing at all. A place is framed
+		// the way a person would frame it: the neighbourhood around it.
+		const lats = points.map(p => p.latitude)
+		const lngs = points.map(p => p.longitude)
+		const span = Math.max(Math.max(...lats) - Math.min(...lats), Math.max(...lngs) - Math.min(...lngs))
+
+		if (points.length < 2 || span < MIN_FIT_SPAN_DEG) {
+			const center = points[points.length - 1]
+			mapRef.current.animateCamera({ center, zoom: PLACE_ZOOM }, { duration: 600 })
+			return
+		}
+
 		mapRef.current.fitToCoordinates(points, {
 			edgePadding: { top: 120, right: 80, bottom: 380, left: 80 },
 			animated: true
@@ -963,14 +1040,17 @@ export const Map = ({
 					<WaitingPin key={i} pin={pin} />
 				))}
 
+				{/* The selected vehicle is exempt from dimming and hiding: it is
+				    the one thing on the map the commuter has asked about. */}
 				{vehicles
-					.filter(v => v.position)
+					.filter(v => v.position && (pinMode !== 'hide' || v.id === selectedId))
 					.map(v => (
 						<VehiclePin
 							key={v.id}
 							vehicle={v}
 							position={at(legs, `v:${v.id}`, v.position)}
 							selected={v.id === selectedId}
+							dim={pinMode === 'dim' && v.id !== selectedId}
 							onSelect={onSelect}
 						/>
 					))}

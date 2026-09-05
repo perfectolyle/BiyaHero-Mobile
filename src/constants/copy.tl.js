@@ -77,6 +77,13 @@ export const mapHome = {
 	locationServicesOff: 'Naka-off ang Location (GPS) ng telepono mo. Buksan ito para makita ang lokasyon mo.',
 	layers: 'Anyo ng mapa',
 	layerNames: { standard: 'Karaniwan', hybrid: 'Satellite', terrain: 'Terrain' },
+	/**
+	 * The fleet as a layer of its own. "Malabo" (faint) rather than a percentage:
+	 * the commuter is choosing to see the town names through the badges, not
+	 * tuning a slider.
+	 */
+	pins: 'Mga sasakyan sa mapa',
+	pinModes: { normal: 'Ipakita', dim: 'Malabo', hide: 'Itago' },
 	myLocationOn: 'Ipinapakita na ang lokasyon mo',
 	myLocationOff: 'Itinago ang lokasyon mo',
 	/**
