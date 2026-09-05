@@ -12,9 +12,11 @@ export const DriverVehicleCard = ({ vehicle, verified = false, onEdit }) => {
 	const { theme } = useTheme()
 	if (!vehicle) return null
 
-	const meta = [vehicle.plate_number, vehicle.body_number && `Body No. ${vehicle.body_number}`]
-		.filter(Boolean)
-		.join(' · ')
+	// The plate alone on the mono line. With the body number beside it and the
+	// VERIFIED badge on the right, the line reached the screen as
+	// "NCR 8842 · Body N…" — the body number is the part that got cut, so it
+	// gets a line of its own below instead.
+	const meta = vehicle.plate_number
 
 	return (
 		<View className="flex-row items-center gap-[14px] rounded-lg border-[1.5px] border-line-subtle bg-surface p-4">
@@ -35,6 +37,11 @@ export const DriverVehicleCard = ({ vehicle, verified = false, onEdit }) => {
 						</View>
 					)}
 				</View>
+				{!!vehicle.body_number && (
+					<Txt variant="caption" className="text-fg-secondary">
+						{`${copy.vehicle.bodyLabel} ${vehicle.body_number}`}
+					</Txt>
+				)}
 			</View>
 
 			{!!onEdit && (

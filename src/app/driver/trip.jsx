@@ -224,7 +224,11 @@ export default function ActiveTrip() {
 				head={
 					<View className="flex-row items-start justify-between gap-3 pb-4 pt-1">
 						<View className="min-w-0 flex-1 gap-[2px]">
-							<Txt variant="headingL" numberOfLines={1}>{copy.activeTrip.heading(trip.destination)}</Txt>
+							{/* Two lines at Heading/M, not one at Heading/L: beside the
+							    "Change" pill, "Bound for SM City Tarlac" was reaching
+							    the screen as "Bound for SM City T…" — the one fact the
+							    heading exists to state was the part cut off. */}
+							<Txt variant="headingM" numberOfLines={2}>{copy.activeTrip.heading(trip.destination)}</Txt>
 							<Txt variant="caption" className="text-fg-secondary">
 								{copy.activeTrip.elapsed(elapsed, (trip.distance_km ?? 0).toFixed(1))}
 							</Txt>

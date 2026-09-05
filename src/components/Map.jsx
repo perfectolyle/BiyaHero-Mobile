@@ -1086,7 +1086,14 @@ export const Map = ({
 				// otherwise swallow the tap, so they clear the focus too.
 				onPress={onMapPress}
 				onPoiClick={onMapPress}
-				onPanDrag={() => onUserPan?.()}
+				// isGesture, not onPanDrag: the follow control on the driver's trip
+				// screen came up OFF from the first frame, before anyone touched
+				// the map — a programmatic camera move was being read as a drag.
+				// The region callback says who moved the camera; only a finger
+				// counts.
+				onRegionChange={(_region, details) => {
+					if (details?.isGesture) onUserPan?.()
+				}}
 				onRegionChangeComplete={next => {
 					setViewport(next)
 					if (rememberRegion) AsyncStorage.setItem(REGION_KEY, JSON.stringify(next)).catch(() => {})
