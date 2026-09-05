@@ -109,7 +109,6 @@ export const mapHome = {
 	 */
 	radius: {
 		nearMe: 'Malapit sa akin',
-		any: 'Kahit gaano kalayo',
 		km: n => `${n} km`
 	}
 }

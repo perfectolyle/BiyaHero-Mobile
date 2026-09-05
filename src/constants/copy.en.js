@@ -98,7 +98,6 @@ export const mapHome = {
 	],
 	radius: {
 		nearMe: 'Near me',
-		any: 'Any distance',
 		km: n => `${n} km`
 	}
 }

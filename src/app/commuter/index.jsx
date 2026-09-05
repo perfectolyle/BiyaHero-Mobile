@@ -293,15 +293,19 @@ export default function MapHome() {
 						    but what can actually reach me. Until the location
 						    toggle is on there is nothing to measure from, so the
 						    row is a single chip that turns it on; "within 3 km"
-						    of nowhere is not a filter. */}
+						    of nowhere is not a filter.
+
+						    Three chips, no "any": a fourth wrapped the row onto a
+						    second line on a 360dp screen. Tapping the active chip
+						    again clears the limit — nothing selected IS "any". */}
 						<View className="flex-row flex-wrap gap-2">
 							{located ? (
-								[null, 1, 3, 5].map(km => (
+								[1, 3, 5].map(km => (
 									<Chip
-										key={km ?? 'any'}
-										label={km == null ? copy.mapHome.radius.any : copy.mapHome.radius.km(km)}
+										key={km}
+										label={copy.mapHome.radius.km(km)}
 										active={radiusKm === km}
-										onPress={() => setRadiusKm(km)}
+										onPress={() => setRadiusKm(radiusKm === km ? null : km)}
 									/>
 								))
 							) : (
