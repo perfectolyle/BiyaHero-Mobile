@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { ActivityIndicator, View, ScrollView, KeyboardAvoidingView, Platform, Pressable, BackHandler, Keyboard } from 'react-native'
+import { ActivityIndicator, View, KeyboardAvoidingView, Platform, Pressable, BackHandler, Keyboard } from 'react-native'
 import { useRouter } from 'expo-router'
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps'
 import { MaterialIcons } from '@expo/vector-icons'
 import * as Location from 'expo-location'
 import { Screen } from '@/components/ui/Screen'
+import { FormScroll } from '@/components/ui/FormScroll'
 import { Txt } from '@/components/ui/Txt'
 import { Header } from '@/components/ui/Header'
 import { Button } from '@/components/ui/Button'
@@ -72,6 +73,8 @@ export default function StartTrip() {
 	const driver = useStore(s => s.driver)
 	const startTrip = useStore(s => s.startTrip)
 	const rerouting = useStore(s => s.rerouting)
+	const presetRoute = useStore(s => s.presetRoute)
+	const setPresetRoute = useStore(s => s.setPresetRoute)
 	const endReroute = useStore(s => s.endReroute)
 	const rerouteTrip = useStore(s => s.rerouteTrip)
 	const showToast = useStore(s => s.showToast)
@@ -308,6 +311,15 @@ export default function StartTrip() {
 		// The choice is made — get the keyboard out from over the button.
 		Keyboard.dismiss()
 	}
+
+	// Tapped on the home screen, so it arrives already chosen: the driver lands
+	// on a filled form instead of retyping the route they just pointed at.
+	useEffect(() => {
+		if (!presetRoute) return
+
+		pickNearby(presetRoute)
+		setPresetRoute(null)
+	}, [presetRoute])
 
 	// A picked suggestion carries exact coordinates — the same precision as
 	// dropping a pin, which is what makes the commuter's marker land right.
@@ -631,7 +643,7 @@ export default function StartTrip() {
 	return (
 		<Screen>
 			<KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
-				<ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="pb-6 pt-4 gap-6 flex-grow" keyboardShouldPersistTaps="handled">
+				<FormScroll contentContainerClassName="pb-6 pt-4 gap-6 flex-grow">
 					<Header title={rerouting ? copy.startTrip.rerouteTitle : copy.startTrip.title} />
 
 					<Txt variant="bodyM" className="text-fg-secondary">
@@ -821,7 +833,7 @@ export default function StartTrip() {
 						loading={starting}
 						disabled={!destination.trim()}
 					/>
-				</ScrollView>
+				</FormScroll>
 			</KeyboardAvoidingView>
 		</Screen>
 	)

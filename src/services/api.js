@@ -30,6 +30,8 @@ const normaliseVehicle = v => {
 		vehicle_type: v.vehicle_type,
 		plate_number: v.plate_number,
 		model: v.model,
+		// The name painted along the side — a bus is known by its line.
+		operator: v.operator ?? null,
 		body_number: v.body_number,
 		destination: v.destination,
 		// Only on a destination search: how close this route runs to it.
@@ -39,6 +41,8 @@ const normaliseVehicle = v => {
 			: null,
 		capacity: stale ? 'unknown' : (v.capacity ?? 'unknown'),
 		current_street: v.current_street,
+		// What the vehicle looks like, so a commuter can match it to the road.
+		photoUrl: v.photo_url ?? null,
 		position: v.position?.lat != null
 			? { latitude: Number(v.position.lat), longitude: Number(v.position.lng) }
 			: null,
@@ -58,7 +62,9 @@ const normaliseVehicle = v => {
 
 /*
  * Commuter reads. NOTE: no lat/lng parameter exists on any of these by design —
- * the app never asks for a location permission, so it has nothing to send.
+ * none of them may know where the commuter is. The one and only place a
+ * commuter position leaves the device is startWatching below, and only for the
+ * single trip the commuter explicitly agreed to be visible on.
  */
 
 export const fetchActiveVehicles = ({ destination, destCoords, vehicleType } = {}) =>
@@ -78,8 +84,46 @@ export const fetchActiveVehicles = ({ destination, destCoords, vehicleType } = {
 		}))
 
 
-export const fetchVehicle = id =>
-	client.get(`/active-vehicles/${id}`).then(res => normaliseVehicle(res.data?.data ?? res.data))
+/**
+ * Where the live socket is, if there is one.
+ *
+ * Asked at runtime rather than baked into the build: the key rotates and the
+ * host differs between a laptop and production, and an APK already in a
+ * tester's hands must not need rebuilding for either.
+ */
+export const fetchRealtimeConfig = () =>
+	client.get('/realtime').then(res => res.data?.data ?? null)
+
+export const fetchVehicle = (id, { geometry = true } = {}) =>
+	client
+		.get(`/active-vehicles/${id}`, geometry ? undefined : { params: { geometry: 0 } })
+		.then(res => normaliseVehicle(res.data?.data ?? res.data))
+
+/**
+ * "Nakatutok sa iyo" — the consented exception to everything above. The
+ * commuter has asked THIS driver, for THIS trip, to see where they are
+ * waiting. `watcher` is the device id from ./watchers, and the server keeps
+ * only a hash of it so the position can be withdrawn but not attributed.
+ *
+ * Re-posting the same watcher refreshes the row rather than adding a second
+ * one, which is how the position stays inside the server's freshness window.
+ */
+export const startWatching = (tripId, { watcher, latitude, longitude }) =>
+	client
+		.post(`/trips/${tripId}/watchers`, { watcher, lat: latitude, lng: longitude })
+		.then(res => ({ expiresIn: res.data?.data?.expires_in ?? null }))
+
+/**
+ * Withdraw that consent. Swallows its failure on purpose: the caller has
+ * already flipped the switch off, and a thrown error there would leave the UI
+ * saying "hidden" while the row still stood. The freshness window is the
+ * backstop for the request that never landed.
+ */
+export const stopWatching = (tripId, watcher) =>
+	// axios carries a DELETE body under `data`. Passed as a plain second
+	// argument it is sent as config instead, the server sees no watcher, and
+	// the opt-out silently does nothing.
+	client.delete(`/trips/${tripId}/watchers`, { data: { watcher } }).catch(() => {})
 
 /**
  * Commuter type-ahead — anywhere on the map. Public and position-free: the
@@ -158,13 +202,13 @@ export const fetchEta = ({ routeId, vehicleType, distanceKm }) => {
 		.catch(() => null)
 }
 
-/* Driver writes — the only place the app ever handles a location. */
+/* Driver writes — where the app handles a location as a matter of course. */
 
 /**
  * Multipart, because the licence photo is a real file. The server stores it on
  * a private disk for a human reviewer and never returns it.
  */
-export const registerDriver = ({ licencePhotoUri, ...fields }) => {
+export const registerDriver = ({ licencePhotoUri, vehiclePhotoUri, ...fields }) => {
 	const form = new FormData()
 
 	Object.entries(fields).forEach(([key, value]) => {
@@ -176,6 +220,16 @@ export const registerDriver = ({ licencePhotoUri, ...fields }) => {
 		name: 'licence.jpg',
 		type: 'image/jpeg'
 	})
+
+	// Optional, and left out entirely when absent — an empty part fails the
+	// server's `image` rule and would sink the whole registration.
+	if (vehiclePhotoUri) {
+		form.append('vehicle_photo', {
+			uri: vehiclePhotoUri,
+			name: 'vehicle.jpg',
+			type: 'image/jpeg'
+		})
+	}
 
 	return client
 		.post('/register', form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 30000 })
@@ -325,9 +379,56 @@ export const pingTrip = (tripId, { latitude, longitude, street, distanceKm }) =>
 export const setTripCapacity = (tripId, capacity) =>
 	client.patch(`/trips/${tripId}/capacity`, { capacity }).then(res => res.data?.data)
 
+/**
+ * The other half of startWatching: where the commuters who opted into THIS
+ * trip are waiting. Places, not people — the server returns no identifier of
+ * any kind, so two pins may or may not be the same phone and the driver has no
+ * way to tell. `endTrip` deletes the rows outright.
+ */
+export const fetchTripWatchers = tripId =>
+	client.get(`/trips/${tripId}/watchers`).then(res => {
+		const d = res.data?.data ?? {}
+
+		return {
+			count: d.count ?? 0,
+			// How many are standing on the road still ahead — the ones the driver
+			// can actually stop for without leaving their corridor.
+			onRouteCount: d.on_route_count ?? 0,
+			// Null while the vehicle has no live fix, and null when nobody is on
+			// the route. A distance we cannot measure must not be printed as zero.
+			nearestM: d.nearest_m ?? null,
+			points: (d.points ?? []).map(p => ({
+				latitude: Number(p.lat),
+				longitude: Number(p.lng),
+				distanceM: p.distance_m ?? null,
+				onRoute: !!p.on_route
+			}))
+		}
+	})
+
 export const endTrip = tripId => client.post(`/trips/${tripId}/end`).then(res => res.data?.data)
 
 export const fetchTripHistory = () => client.get('/trips/history').then(res => res.data?.data ?? [])
 
 /** NOTE: the plate is half the login credential — changing it changes the login. */
-export const updateVehicle = payload => client.patch('/vehicle', payload).then(res => res.data?.data)
+/**
+ * The vehicle, and optionally a new photo of it.
+ *
+ * Multipart only when there IS a photo: a plain PATCH is cheaper, and sending
+ * an empty file part makes the server's `image` rule reject the whole edit.
+ * Laravel reads PATCH from _method because multipart bodies do not survive one.
+ */
+export const updateVehicle = ({ vehiclePhotoUri, ...fields }) => {
+	if (!vehiclePhotoUri) return client.patch('/vehicle', fields).then(res => res.data?.data)
+
+	const form = new FormData()
+	Object.entries(fields).forEach(([key, value]) => {
+		if (value !== undefined && value !== null && value !== '') form.append(key, String(value))
+	})
+	form.append('_method', 'PATCH')
+	form.append('vehicle_photo', { uri: vehiclePhotoUri, name: 'vehicle.jpg', type: 'image/jpeg' })
+
+	return client
+		.post('/vehicle', form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 30000 })
+		.then(res => res.data?.data)
+}

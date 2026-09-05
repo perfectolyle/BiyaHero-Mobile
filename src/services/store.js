@@ -2,9 +2,11 @@ import { create } from 'zustand'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Location from 'expo-location'
 import * as api from './api'
-import { PING_INTERVAL_MS } from '@/theme/tokens'
+import { subscribe, disconnectRealtime } from './realtime'
+import { PING_INTERVAL_MS, STALE_AFTER_MS } from '@/theme/tokens'
 import { Vibration } from 'react-native'
 import { distanceM, placeLabel, NEAR_M, NEAR_RESET_M } from './geo'
+import { watcherId } from './watchers'
 import { getCopy } from '@/constants/copy'
 
 const KEYS = { role: 'biyahero.role', token: 'biyahero.token', driver: 'biyahero.driver', searches: 'biyahero.searches' }
@@ -14,6 +16,21 @@ let pollTimer = null
 let broadcastWatcher = null
 let broadcastGuard = null
 let myLocationWatcher = null
+let watchPingTimer = null
+let fleetSocket = null
+let movedBuffer = new Map()
+let movedFlush = null
+// Bumped by every start and every stop, so an opt-in still travelling when the
+// commuter backs out can tell that it has been overtaken.
+let watchGeneration = 0
+// When the server last confirmed the commuter is visible, and for how long that
+// confirmation is good for. The banner is a claim about the SERVER's state, so
+// it has to expire when that state does rather than when a request happens to
+// fail — a phone that lost signal is exactly when it would otherwise keep
+// insisting a driver can see them.
+let watchAckAt = 0
+let watchExpiresMs = 0
+let watchGpsGuard = null
 // Vehicles already announced, so two jeepneys in range do not buzz forever.
 let alertedIds = new Set()
 let toastTimer = null
@@ -31,13 +48,24 @@ const startBroadcastWatcher = (tripId, get, set) => {
 	// this trip, today's total, their history, their profile — was 0.
 	let travelledKm = get().trip?.distance_km ?? 0
 	let lastFix = null
+	let lastPingAt = 0
 
 	return Location.watchPositionAsync(
-		{ accuracy: Location.Accuracy.High, timeInterval: PING_INTERVAL_MS, distanceInterval: 20 },
+		{ accuracy: Location.Accuracy.High, timeInterval: FIX_INTERVAL_MS, distanceInterval: 5 },
 		async loc => {
 			if (!loc?.coords) return
 			const { latitude, longitude } = loc.coords
 			const here = { latitude, longitude }
+
+			// Every fix moves the driver's own pin, so their map is smooth.
+			set({ broadcastPosition: here })
+
+			// Everything below still runs on the ping cadence. Distance is the
+			// reason: the 15 m jitter floor assumes eight seconds of travel
+			// between samples, and comparing 1 Hz fixes against it would reject
+			// every real hop at city speeds and count the trip as zero km.
+			if (Date.now() - lastPingAt < PING_INTERVAL_MS) return
+			lastPingAt = Date.now()
 
 			// GPS jitter while parked would otherwise inflate the total, so a
 			// hop under 15 m does not count as distance travelled.
@@ -45,7 +73,7 @@ const startBroadcastWatcher = (tripId, get, set) => {
 			if (hop !== null && hop >= 15) travelledKm += hop / 1000
 			lastFix = here
 
-			set({ broadcastPosition: here, trip: { ...get().trip, distance_km: Number(travelledKm.toFixed(2)) } })
+			set({ trip: { ...get().trip, distance_km: Number(travelledKm.toFixed(2)) } })
 
 			let street
 			if (Date.now() - lastStreetLookup > STREET_LOOKUP_INTERVAL_MS) {
@@ -88,6 +116,21 @@ const currentFix = async () => {
 /** Reverse-geocode sparingly — it is rate-limited and the street rarely changes. */
 const STREET_LOOKUP_INTERVAL_MS = 30_000
 
+/**
+ * How often a position is READ, as opposed to how often it is sent.
+ *
+ * The map interpolates between fixes, and interpolation is only as smooth as
+ * the fixes feeding it: one every eight seconds leaves the marker hopping and
+ * then sitting still, which is the blinking it was supposed to cure. Reading at
+ * roughly 1 Hz gives the glide something continuous to follow. Nothing extra
+ * goes over the network — the ping and the opt-in refresh keep their own
+ * cadence and just read whatever the latest fix is.
+ */
+const FIX_INTERVAL_MS = 1000
+// Long enough to swallow a whole fleet's burst into one render, short enough
+// that the glide still gets a fresh target well within its own 30 Hz frame.
+const MOVE_FLUSH_MS = 100
+
 export const useStore = create((set, get) => ({
 	/* ---------------------------------------------------------------- shared */
 	role: null,
@@ -101,6 +144,10 @@ export const useStore = create((set, get) => ({
 	},
 
 	setRole: async role => {
+		// The banner lives on the commuter map. Switching away would hide the
+		// only control that says somebody can see you, so the consent goes too.
+		if (role !== 'commuter') get().stopWatchingTrip()
+
 		set({ role })
 		await AsyncStorage.setItem(KEYS.role, role)
 	},
@@ -169,9 +216,21 @@ export const useStore = create((set, get) => ({
 	/* ------------------------------------------------------------- commuter */
 	// Filtering never uses a commuter position. `myLocation` exists only when
 	// the commuter taps the crosshair and grants permission — strictly opt-in,
-	// display-and-alert only, never sent to the server.
+	// display-and-alert only. It reaches the server in exactly one case, below.
 	myLocation: null,
 	myLocationOn: false,
+	/**
+	 * The single trip this commuter agreed to be visible on. A second, separate
+	 * consent on top of the blue dot, scoped to one driver and one run, taken
+	 * back the moment it is switched off, the dot goes dark, or the trip ends.
+	 */
+	watchingTripId: null,
+	/**
+	 * Which vehicle the commuter is currently visible to, as { destination,
+	 * plate }. Not the driver's name: nobody picks a jeepney out of traffic by
+	 * who is driving it — they read the signboard and the plate.
+	 */
+	watchingVehicle: null,
 	vehicles: [],
 	activeCount: 0,
 	loading: false,
@@ -261,8 +320,10 @@ export const useStore = create((set, get) => ({
 	},
 
 	/**
-	 * Opt-in blue dot. Nothing here talks to the server: the position feeds the
-	 * map marker, the distance lines, and the nearby vibration — that is all.
+	 * Opt-in blue dot. The position feeds the map marker, the distance lines and
+	 * the nearby vibration; nothing here talks to the server. The one thing that
+	 * ever sends it anywhere is startWatchingTrip below, for the single trip the
+	 * commuter switched it on for.
 	 */
 	enableMyLocation: async () => {
 		// A second tap while the first is still resolving would leave an
@@ -306,8 +367,14 @@ export const useStore = create((set, get) => ({
 				apply(fix?.coords)
 			}
 
+			// 1 Hz so the dot glides instead of hopping every ten metres. This
+			// costs battery, which is why it only ever runs while the commuter
+			// has the crosshair explicitly switched on.
 			myLocationWatcher = await Location.watchPositionAsync(
-				{ accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 10 },
+				// 3 m, not 1: a stationary phone jitters a few metres, and a dot
+				// that drifts while its owner stands still is its own kind of
+				// dishonest. Walking pace clears it in about two seconds.
+				{ accuracy: Location.Accuracy.High, timeInterval: FIX_INTERVAL_MS, distanceInterval: 3 },
 				loc => apply(loc?.coords)
 			)
 		} catch (e) {
@@ -328,11 +395,154 @@ export const useStore = create((set, get) => ({
 			myLocationWatcher = null
 		}
 		alertedIds = new Set()
+		// The dot going dark while a driver still sees this commuter waiting is
+		// the exact broken promise this whole feature is built to avoid.
+		const wasWatching = !!get().watchingTripId
+		get().stopWatchingTrip()
 		set({ myLocation: null, myLocationOn: false })
-		get().showToast(getCopy().mapHome.myLocationOff)
+		// stopWatchingTrip already said the driver can no longer see them, which
+		// is the more important half. Adding "itinago ang lokasyon mo" on top
+		// would just overwrite it two lines later.
+		if (!wasWatching) get().showToast(getCopy().mapHome.myLocationOff)
 	},
 
 	toggleMyLocation: () => (get().myLocationOn ? get().disableMyLocation() : get().enableMyLocation()),
+
+	/**
+	 * Show ONE driver where this commuter is waiting, for ONE trip. It borrows
+	 * the crosshair's opt-in rather than raising a second permission prompt for
+	 * a question the commuter has already answered.
+	 */
+	startWatchingTrip: async (tripId, vehicle = null) => {
+		const generation = ++watchGeneration
+		const superseded = () => generation !== watchGeneration
+
+		if (!(await get().enableMyLocation())) return false
+		if (superseded()) return false
+
+		// enableMyLocation can report success with the fix still in flight, and
+		// posting a null position would stand this commuter at 0,0 off Ghana.
+		const position = get().myLocation
+		if (!position) {
+			get().showToast(getCopy().common.genericError)
+			return false
+		}
+
+		const watcher = await watcherId()
+		if (superseded()) return false
+
+		let ack
+		try {
+			ack = await api.startWatching(tripId, { watcher, ...position })
+		} catch {
+			get().showToast(getCopy().common.genericError)
+			return false
+		}
+
+		// The withdrawal landed while the opt-in was still in the air. Take the
+		// row back, or the driver keeps a pin for a commuter who left the screen
+		// believing they had never switched it on.
+		if (superseded()) {
+			api.stopWatching(tripId, watcher)
+			return false
+		}
+
+		watchAckAt = Date.now()
+		// The server names its own window, so a change there cannot leave the
+		// banner outliving the row it describes.
+		watchExpiresMs = (ack?.expiresIn ?? 150) * 1000
+
+		set({ watchingTripId: tripId, watchingVehicle: vehicle })
+		get().showToast(getCopy().vehicle.watchOn)
+
+		if (watchPingTimer) clearInterval(watchPingTimer)
+		if (watchGpsGuard) clearInterval(watchGpsGuard)
+
+		// GPS switched off mid-wait kills the fixes silently. The driver would go
+		// on seeing a pin the phone can no longer vouch for, so treat it the way
+		// the commuter turning the dot off is treated.
+		watchGpsGuard = setInterval(async () => {
+			if (superseded()) return
+			const on = await Location.hasServicesEnabledAsync().catch(() => false)
+			if (!on && !superseded()) get().disableMyLocation()
+		}, 20_000)
+		// The server drops a row nobody has re-posted inside its freshness window,
+		// so a commuter standing still at a corner would quietly disappear from
+		// the driver's map having never opted out.
+		watchPingTimer = setInterval(() => {
+			const { watchingTripId, myLocation } = get()
+			if (!watchingTripId || !myLocation) return
+
+			// Nothing has reached the server inside its own window, so it has
+			// dropped the row whatever the reason. Saying so beats a banner that
+			// keeps promising visibility through a dead spot.
+			if (Date.now() - watchAckAt > watchExpiresMs) return get().stopWatchingTrip(watchingTripId)
+
+			api.startWatching(watchingTripId, { watcher, ...myLocation })
+				.then(() => {
+					if (superseded()) {
+						// Withdrawn while this refresh was on the wire — it has just
+						// re-created the row the DELETE removed. Take it back out.
+						api.stopWatching(watchingTripId, watcher)
+						return
+					}
+
+					watchAckAt = Date.now()
+				})
+				.catch(e => {
+					// A rejection from a superseded refresh says nothing about the
+					// consent that is live now.
+					if (superseded()) return
+
+					// The driver finished the run, so there is nobody left to be
+					// seen by and the banner would be claiming otherwise.
+					if ([404, 410, 422].includes(e?.response?.status)) get().stopWatchingTrip(watchingTripId)
+				})
+		}, PING_INTERVAL_MS)
+
+		return true
+	},
+
+	/**
+	 * Withdraw. `expectedTripId` guards the callers that are reacting to ONE
+	 * trip ending — a 404 from a vehicle sheet the commuter merely browsed, or
+	 * from a refresh belonging to a consent already replaced, must not revoke
+	 * whichever consent happens to be live now.
+	 */
+	stopWatchingTrip: async (expectedTripId = null) => {
+		const tripId = get().watchingTripId
+		if (expectedTripId !== null && tripId !== expectedTripId) return
+
+		// Cancels an opt-in that is still mid-flight as well as a live one.
+		watchGeneration++
+
+		// Kill the refresh first. A ping already queued behind the DELETE would
+		// re-create the row the commuter just withdrew.
+		if (watchPingTimer) {
+			clearInterval(watchPingTimer)
+			watchPingTimer = null
+		}
+		if (watchGpsGuard) {
+			clearInterval(watchGpsGuard)
+			watchGpsGuard = null
+		}
+
+		if (!tripId) return
+
+		set({ watchingTripId: null, watchingVehicle: null })
+		get().showToast(getCopy().vehicle.watchOff)
+
+		await api.stopWatching(tripId, await watcherId())
+	},
+
+	toggleWatchingTrip: async (tripId, vehicle = null) => {
+		if (get().watchingTripId === tripId) return get().stopWatchingTrip()
+
+		// Opting into a second vehicle without withdrawing from the first would
+		// leave the previous driver watching until the freshness window lapsed.
+		if (get().watchingTripId) await get().stopWatchingTrip()
+		await get().startWatchingTrip(tripId, vehicle)
+	},
 
 	/**
 	 * Vibrate once when a LIVE vehicle comes within NEAR_M of the commuter,
@@ -363,9 +573,79 @@ export const useStore = create((set, get) => ({
 		get().showToast(getCopy().mapHome.near(arriving.v.plate_number))
 	},
 
+	/**
+	 * A pushed position, folded straight into the list.
+	 *
+	 * No refetch: the socket carries what changed, and the client already holds
+	 * the rest. A push is also proof of life, so the card comes back from stale
+	 * without waiting for the next poll to say so.
+	 */
+	applyVehicleMoved: payload => {
+		if (payload?.id == null) return
+
+		// One socket frame per vehicle means a 30-strong fleet lands 30 frames in
+		// a single native burst. Writing the store per frame is one render each,
+		// which trips React's nested-update limit outright, and re-runs the O(n)
+		// proximity scan n times over. Collect the burst and apply it in ONE
+		// write. Keying by id also drops all but the newest fix for a vehicle
+		// that pinged twice inside the window. The glide interpolates between
+		// store writes, so the motion on screen is unchanged.
+		movedBuffer.set(payload.id, payload)
+		if (movedFlush) return
+
+		movedFlush = setTimeout(() => {
+			movedFlush = null
+			const burst = movedBuffer
+			movedBuffer = new Map()
+			get().applyMoveBurst(burst)
+		}, MOVE_FLUSH_MS)
+	},
+
+	applyMoveBurst: burst => {
+		if (!burst.size) return
+
+		set(state => ({
+			vehicles: state.vehicles.map(v => {
+				const payload = burst.get(v.id)
+				if (!payload) return v
+
+				const position = payload.position?.lat != null
+					? { latitude: Number(payload.position.lat), longitude: Number(payload.position.lng) }
+					: null
+
+				// Freshness comes from the ping the payload carries, not from the fact
+				// that a message arrived. A capacity tap broadcasts too, and assuming it
+				// meant "live" would bring a vehicle that stopped reporting hours ago
+				// back onto the map as LIVE — the exact invention the stale badge is
+				// there to prevent. Mirrors normaliseVehicle in api.js.
+				const pingedAt = payload.last_ping_at ? new Date(payload.last_ping_at).getTime() : null
+				const age = pingedAt ? Date.now() - pingedAt : null
+				const stale = age === null || age > STALE_AFTER_MS
+
+				return {
+					...v,
+					position: position ?? v.position,
+					current_street: payload.current_street ?? v.current_street,
+					// A stale vehicle reports no capacity, same as the listing.
+					capacity: stale ? 'unknown' : (payload.capacity ?? v.capacity),
+					stale,
+					minutesAgo: age === null ? null : Math.floor(age / 60000)
+				}
+			})
+		}))
+
+		get().checkProximity()
+	},
+
 	startPolling: () => {
 		if (pollTimer) clearInterval(pollTimer)
 		get().refresh()
+
+		// The socket carries positions; the poll still carries MEMBERSHIP — a
+		// jeepney that started or ended a trip is not a move, so it arrives on
+		// no channel. Both run, and the poll alone is enough if the socket
+		// never connects.
+		if (!fleetSocket) fleetSocket = subscribe('fleet', 'vehicle.moved', get().applyVehicleMoved)
 		// 8 s, matching the driver broadcast interval — polling faster would only
 		// re-render the same pings.
 		pollTimer = setInterval(() => get().refresh(), PING_INTERVAL_MS)
@@ -374,6 +654,15 @@ export const useStore = create((set, get) => ({
 	stopPolling: () => {
 		if (pollTimer) clearInterval(pollTimer)
 		pollTimer = null
+
+		if (movedFlush) clearTimeout(movedFlush)
+		movedFlush = null
+		movedBuffer = new Map()
+
+		if (fleetSocket) {
+			fleetSocket()
+			fleetSocket = null
+		}
 	},
 
 	/* --------------------------------------------------------------- driver */
@@ -422,6 +711,8 @@ export const useStore = create((set, get) => ({
 		await api.logoutDriver()
 		await AsyncStorage.multiRemove([KEYS.token, KEYS.driver])
 		api.setAuthToken(null)
+		// Private channels were authorised with the token just thrown away.
+		disconnectRealtime()
 		get().stopBroadcast()
 		set({ driver: null, trip: null, summary: null })
 	},
@@ -482,6 +773,14 @@ export const useStore = create((set, get) => ({
 		get().showToast(getCopy().startTrip.rerouted)
 		return updated
 	},
+
+	/**
+	 * A route the driver tapped on the home screen, waiting to be applied by
+	 * the start screen. Same reason `rerouting` lives here: /driver/start is
+	 * reached by a deep link, and params do not survive one.
+	 */
+	presetRoute: null,
+	setPresetRoute: presetRoute => set({ presetRoute }),
 
 	/** Route intent for /driver/start: deep links drop params, stores don't. */
 	rerouting: false,

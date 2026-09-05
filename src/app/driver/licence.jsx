@@ -1,12 +1,14 @@
 import { useRef, useState } from 'react'
-import { View, ScrollView, Image, Pressable, KeyboardAvoidingView, Platform } from 'react-native'
+import { View, Image, KeyboardAvoidingView, Platform } from 'react-native'
 import { useRouter } from 'expo-router'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { MaterialIcons } from '@expo/vector-icons'
 import { Screen } from '@/components/ui/Screen'
+import { FormScroll } from '@/components/ui/FormScroll'
 import { Txt } from '@/components/ui/Txt'
 import { Header } from '@/components/ui/Header'
 import { Field } from '@/components/ui/Field'
+import { DateField } from '@/components/ui/DateField'
 import { Button } from '@/components/ui/Button'
 import { useRegistration } from '@/services/registration'
 import { useStore } from '@/services/store'
@@ -115,10 +117,13 @@ export default function LicenceCapture() {
 				vehicle_type: draft.vehicle_type,
 				plate_number: draft.plate_number.trim(),
 				model: draft.model.trim(),
+				operator: draft.operator.trim(),
 				body_number: draft.body_number.trim(),
 				license_no: draft.license_no.trim(),
 				license_expires_at: draft.license_expires_at.trim(),
-				licencePhotoUri: draft.licencePhotoUri
+				licencePhotoUri: draft.licencePhotoUri,
+				// Picked back on the vehicle step, and optional there.
+				vehiclePhotoUri: draft.vehiclePhotoUri
 			})
 			reset()
 			// Format and expiry are all that can be checked, and they passed —
@@ -137,7 +142,7 @@ export default function LicenceCapture() {
 	return (
 		<Screen>
 			<KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
-				<ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="pb-6 pt-4 gap-6 flex-grow" keyboardShouldPersistTaps="handled">
+				<FormScroll contentContainerClassName="pb-4 pt-2 gap-4 flex-grow">
 					<Header
 						eyebrow={copy.licence.eyebrow}
 						title={copy.licence.title}
@@ -147,7 +152,11 @@ export default function LicenceCapture() {
 					<Txt variant="bodyM" className="text-fg-secondary">{copy.licence.body}</Txt>
 
 					{/* Licence cards are landscape, so the frame is too. */}
-					<View className="aspect-[1.6] overflow-hidden rounded-xl border-2 border-dashed border-line-strong bg-surface-sunken">
+					<View
+						className={`overflow-hidden rounded-xl border-2 border-dashed border-line-strong bg-surface-sunken ${
+							draft.licencePhotoUri ? 'aspect-[2.8]' : 'aspect-[1.6]'
+						}`}
+					>
 						{draft.licencePhotoUri ? (
 							<Image source={{ uri: draft.licencePhotoUri }} className="h-full w-full" resizeMode="cover" />
 						) : !permission ? (
@@ -189,7 +198,7 @@ export default function LicenceCapture() {
 					)}
 
 					{!!draft.licencePhotoUri && (
-						<View className="gap-4">
+						<View className="gap-3">
 							<Txt variant="labelS" className="text-fg-secondary">{copy.licence.confirmLabel}</Txt>
 							<Field
 								label={copy.licence.nameLabel}
@@ -209,14 +218,15 @@ export default function LicenceCapture() {
 								error={errorField === 'license_no' ? error : null}
 								hint={copy.licence.hashNote}
 							/>
-							<Field
+							<DateField
 								label={copy.licence.expiryLabel}
 								placeholder={copy.licence.expiryPlaceholder}
 								value={draft.license_expires_at}
-								onChangeText={value => update({ license_expires_at: value })}
-								keyboardType="numbers-and-punctuation"
-								autoCorrect={false}
-								mono
+								onChange={value => update({ license_expires_at: value })}
+								// The server refuses a licence that has already
+								// expired, so there is no honest reason to offer
+								// a date that would be rejected.
+								minimumDate={new Date(Date.now() + 86_400_000)}
 								error={errorField === 'license_expires_at' ? error : null}
 							/>
 						</View>
@@ -236,7 +246,7 @@ export default function LicenceCapture() {
 							<Txt variant="caption" className="min-w-0 flex-1 text-fg-secondary">{copy.licence.reviewNote}</Txt>
 						</View>
 					</View>
-				</ScrollView>
+				</FormScroll>
 			</KeyboardAvoidingView>
 		</Screen>
 	)

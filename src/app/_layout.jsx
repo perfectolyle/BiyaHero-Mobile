@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { View } from 'react-native'
 import { Stack } from 'expo-router'
 import { useFonts } from 'expo-font'
@@ -12,11 +12,13 @@ import {
 } from '@expo-google-fonts/plus-jakarta-sans'
 import { JetBrainsMono_500Medium, JetBrainsMono_700Bold } from '@expo-google-fonts/jetbrains-mono'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useStore } from '@/services/store'
 import { usePrefs } from '@/services/prefs'
 import { useTheme } from '@/theme/useTheme'
 import { Splash } from '@/components/Splash'
 import { Toast } from '@/components/Toast'
+import { WatchingBanner } from '@/components/WatchingBanner'
 import '../global.css'
 
 export default function RootLayout() {
@@ -25,7 +27,18 @@ export default function RootLayout() {
 	const hydratePrefs = usePrefs(s => s.hydrate)
 	const prefsHydrated = usePrefs(s => s.hydrated)
 	const { vars } = useTheme()
+	const insets = useSafeAreaInsets()
+	const watching = useStore(s => !!s.watchingTripId)
 	const [minimumElapsed, setMinimumElapsed] = useState(false)
+
+	// The watching bar is a real bar: it eats the top inset, so the screens
+	// beneath it must stop adding their own or every header sits a notch too
+	// low. Overriding the context beats touching each screen — the next screen
+	// somebody adds inherits it instead of quietly overlapping the bar.
+	const screenInsets = useMemo(
+		() => (watching ? { ...insets, top: 0 } : insets),
+		[watching, insets.top, insets.bottom, insets.left, insets.right]
+	)
 
 	const [fontsLoaded] = useFonts({
 		// @expo/vector-icons loads its font lazily on first use, which a map
@@ -60,7 +73,10 @@ export default function RootLayout() {
 			<View style={vars} className="flex-1 bg-surface-canvas">
 				{ready ? (
 					<>
-						<Stack screenOptions={{ headerShown: false, animation: 'fade' }} />
+						<WatchingBanner />
+						<SafeAreaInsetsContext.Provider value={screenInsets}>
+							<Stack screenOptions={{ headerShown: false, animation: 'fade' }} />
+						</SafeAreaInsetsContext.Provider>
 						<Toast />
 					</>
 				) : (

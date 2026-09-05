@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { View, Pressable } from 'react-native'
+import { View, Pressable, useWindowDimensions } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps'
 import { MaterialIcons } from '@expo/vector-icons'
@@ -8,6 +8,7 @@ import { Txt } from '@/components/ui/Txt'
 import { fetchNearbyPlaces } from '@/services/api'
 import { usePrefs, MAP_TYPES } from '@/services/prefs'
 import { useCopy } from '@/constants/copy'
+import { distanceM, orientRoute, remainingRoute } from '@/services/geo'
 import { elevation } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
 import { MAP_STYLES } from '@/theme/mapStyle'
@@ -44,6 +45,127 @@ const REGION_KEY = 'biyahero.mapRegion'
  */
 const SETTLE_MS = 5000
 
+/**
+ * Far enough that the vehicle cannot have driven it between two fixes: a
+ * resumed session, a GPS correction, or the first fix after a cold start.
+ * Animating one of those sends the pin sliding across the city.
+ */
+const GLIDE_JUMP_M = 3000
+
+/**
+ * How often interpolated positions advance.
+ *
+ * 30 Hz, not 60: at city zoom a jeepney covers under two pixels a frame at
+ * 60 Hz, so the extra half of the work buys nothing anyone can see.
+ */
+const GLIDE_HZ = 30
+
+/**
+ * Bounds on how long a pin takes to cross to its new fix.
+ *
+ * The gap is MEASURED, not assumed. Pings are nominally eight seconds apart and
+ * in practice are not: a backgrounded app, a dead spot or a slow poll stretches
+ * them. Animating over a hardcoded interval makes the pin finish early and
+ * freeze — the hop-and-hold that reads as blinking — or overshoot the next fix.
+ */
+// Each follow step animates for exactly as long as the gap to the next one, so
+// the camera is always moving rather than stepping and waiting.
+const FOLLOW_STEP_MS = 400
+
+const GLIDE_MIN_MS = 1000
+const GLIDE_MAX_MS = 20000
+
+const lerp = (a, b, t) => a + (b - a) * t
+
+/** Where a pin is right now, or its raw fix if nothing is interpolating it. */
+const at = (legs, key, fallback = null) => {
+	const leg = legs[key]
+	if (!leg) return fallback
+
+	const t = leg.durationMs > 0 ? Math.min(1, (Date.now() - leg.startedAt) / leg.durationMs) : 1
+
+	return {
+		latitude: lerp(leg.from.latitude, leg.to.latitude, t),
+		longitude: lerp(leg.from.longitude, leg.to.longitude, t)
+	}
+}
+
+/**
+ * One clock, driving every position on the map.
+ *
+ * Two things force this shape. First, the route line is consumed at the
+ * vehicle, so the line and the pin MUST read the same interpolated point — cut
+ * the line at the raw fix while the pin is still travelling and the road clears
+ * before the jeepney reaches it, which is precisely the defect this replaces.
+ * Nothing native exposes its interpolated value back to JS, so the
+ * interpolation has to live here.
+ *
+ * Second, cost. Animated markers move by setNativeProps, and on the New
+ * Architecture every one of those is a full shadow-tree commit — twenty pins
+ * animating is twenty commits a frame. One tick that re-renders memoised pins
+ * is one commit, whatever the fleet size.
+ */
+const useGlide = points => {
+	const legs = useRef({})
+	const [, setFrame] = useState(0)
+
+	// Signature, not the array: the poll rebuilds every object each tick, and
+	// identity alone would restart every leg eight times a minute.
+	const signature = points
+		.map(p => `${p.key}:${p.position?.latitude ?? ''},${p.position?.longitude ?? ''}`)
+		.join('|')
+
+	useEffect(() => {
+		const now = Date.now()
+
+		for (const { key, position } of points) {
+			if (!position) continue
+
+			const leg = legs.current[key]
+			if (leg && leg.to.latitude === position.latitude && leg.to.longitude === position.longitude) continue
+
+			// Measured from the previous fix for this pin, so an irregular ping
+			// stretches the glide instead of stranding it.
+			const gap = leg ? Math.min(GLIDE_MAX_MS, Math.max(GLIDE_MIN_MS, now - leg.startedAt)) : 0
+			const from = leg ? at(legs.current, key, position) : position
+			const jumped = distanceM(from, position)
+
+			legs.current[key] = {
+				from,
+				to: position,
+				startedAt: now,
+				// A jump is not a drive: land on it rather than sliding the pin
+				// across the city for the next eight seconds.
+				durationMs: jumped !== null && jumped > GLIDE_JUMP_M ? 0 : gap
+			}
+		}
+
+		// Pins that left the fleet must not keep a leg alive forever.
+		const live = new Set(points.map(p => p.key))
+		for (const key of Object.keys(legs.current)) {
+			if (!live.has(key)) delete legs.current[key]
+		}
+
+		// The interval only renders while something is mid-glide, so a leg that
+		// SNAPPED (duration 0) would otherwise sit at the old fix until the next
+		// vehicle happens to move.
+		setFrame(f => f + 1)
+	}, [signature])
+
+	useEffect(() => {
+		const timer = setInterval(() => {
+			const now = Date.now()
+			// Idle costs one cheap scan; only motion costs a render.
+			const moving = Object.values(legs.current).some(leg => now - leg.startedAt < leg.durationMs)
+			if (moving) setFrame(f => f + 1)
+		}, Math.round(1000 / GLIDE_HZ))
+
+		return () => clearInterval(timer)
+	}, [])
+
+	return legs.current
+}
+
 const SettledMarker = ({ redrawKey, settleMs = SETTLE_MS, children, ...markerProps }) => {
 	const [tracking, setTracking] = useState(true)
 
@@ -60,12 +182,12 @@ const SettledMarker = ({ redrawKey, settleMs = SETTLE_MS, children, ...markerPro
 	)
 }
 
-const VehiclePin = memo(({ vehicle, selected, onSelect }) => {
+const VehiclePin = memo(({ vehicle, position, selected, onSelect }) => {
 	const { theme, scheme } = useTheme()
 
 	return (
 	<SettledMarker
-		coordinate={vehicle.position}
+		coordinate={position}
 		onPress={() => onSelect?.(vehicle)}
 		anchor={{ x: 0.5, y: 0.5 }}
 		// Above the destination pin (60): when a vehicle arrives, the live
@@ -113,17 +235,17 @@ const VehiclePin = memo(({ vehicle, selected, onSelect }) => {
 	// screen reader must not keep announcing last trip's destination.
 	prev.vehicle.destination === next.vehicle.destination &&
 	prev.vehicle.plate_number === next.vehicle.plate_number &&
-	prev.vehicle.position?.latitude === next.vehicle.position?.latitude &&
-	prev.vehicle.position?.longitude === next.vehicle.position?.longitude
+	prev.position?.latitude === next.position?.latitude &&
+	prev.position?.longitude === next.position?.longitude
 )
 
 /**
  * The driver's OWN vehicle: the same badge as the fleet pins but in
  * location-blue, so their map reads "that's me" — a vehicle, not a dot.
  */
-const SelfVehiclePin = ({ vehicle }) => (
+const SelfVehiclePin = ({ vehicle, position }) => (
 	<SettledMarker
-		coordinate={vehicle.position}
+		coordinate={position}
 		anchor={{ x: 0.5, y: 0.5 }}
 		redrawKey={vehicle.vehicle_type}
 		zIndex={95}
@@ -163,6 +285,58 @@ const DestinationPin = ({ pin }) => {
 		</SettledMarker>
 	)
 }
+
+/**
+ * A commuter who agreed to show THIS driver where they are waiting, on THIS
+ * trip. The only position in the whole app that a commuter ever hands over, and
+ * it is dropped the moment the trip ends.
+ *
+ * Neither the amber of a vehicle pin nor the capacity green: a person waiting is
+ * a person, not a status. Filled means they are standing on the road still
+ * ahead — someone this driver can stop for without leaving their corridor. That
+ * is a fact about the route, not about who happens to be closest right now, so
+ * a pin does not change colour as the vehicle drives towards it.
+ *
+ * 30dp, comfortably under the ~60dp a custom marker view can be rasterised into
+ * on this stack (see PlacePin) — never the pin that comes back ragged.
+ */
+const WaitingPin = memo(({ pin }) => {
+	const { theme, scheme } = useTheme()
+
+	return (
+		<SettledMarker
+			coordinate={pin}
+			anchor={{ x: 0.5, y: 0.5 }}
+			// Over the place layer and the destination, under the fleet: a person
+			// standing on a corner outranks the corner, and the moving vehicle
+			// outranks both.
+			zIndex={65}
+			redrawKey={`${pin.onRoute}|${scheme}`}
+		>
+			<View
+				style={[
+					elevation.float,
+					{
+						backgroundColor: pin.onRoute ? theme.text.primary : theme.surface.default,
+						// The filled pin keeps the ring in its own colour so both
+						// tiers are the same 30dp circle and neither shifts.
+						borderColor: pin.onRoute ? theme.text.primary : theme.border.subtle
+					}
+				]}
+				className="h-[30px] w-[30px] items-center justify-center rounded-full border-[1.5px]"
+			>
+				<MaterialIcons
+					name="person"
+					size={18}
+					color={pin.onRoute ? theme.surface.default : theme.icon.primary}
+				/>
+			</View>
+		</SettledMarker>
+	)
+}, (prev, next) =>
+	prev.pin.onRoute === next.pin.onRoute &&
+	prev.pin.latitude === next.pin.latitude &&
+	prev.pin.longitude === next.pin.longitude)
 
 /**
  * Biyahero's own place layer.
@@ -420,20 +594,49 @@ const LayerPicker = () => {
 /**
  * Map Canvas. Desaturated on purpose: the map is the ground, vehicles are the
  * figure. Nothing here reads or displays the commuter's own position — there is
- * no myLocation button and no permission request.
+ * no myLocation button and no permission request. waitingPins is the single
+ * consented exception: positions commuters chose to show ONE driver for ONE
+ * trip, handed in as a prop and never sensed here.
  */
 export const Map = ({
 	vehicles = [],
 	selectedId,
 	onSelect,
 	onMapPress,
-	routeWaypoints,
+	// The FULL corridor. Map trims it at the vehicle itself, because the line
+	// is consumed at a position that only exists here — see useGlide.
+	route,
+	// Where the corridor is cut short. Kept separate from destinationPin: the
+	// commuter screens pin a searched place they are not routed to.
+	routeTarget = null,
+	// Whose travel erases the line: a vehicle id, or 'self' for the driver's
+	// own. Omitted, the route draws whole.
+	routeAnchor,
 	destinationPin,
 	selfVehicle,
+	// Only ever non-empty on the driver's own active-trip screen, and only for
+	// the commuters who opted in to that trip.
+	waitingPins = [],
 	fitTo,
 	fitKey,
 	myLocation,
 	locateNonce = 0,
+	// Recentre on something that is not the viewer — the vehicle a commuter is
+	// watching. Separate from locateNonce, which always means "where am I".
+	// Follow mode. While ON the camera stays on the vehicle as it moves; while
+	// OFF the commuter pans freely. A one-shot recentre was the earlier shape,
+	// but a jeepney that is moving walks straight back out of frame.
+	follow = false,
+	// Which glide leg to track — 'v:<id>'. Following the INTERPOLATED position
+	// rather than the raw fix is what makes it read as a camera on a moving
+	// vehicle instead of a jump every eight seconds.
+	followKey = null,
+	// Raw fix, used until a glide leg exists for followKey.
+	centerOn = null,
+	// How far ABOVE the map's true centre to place the followed vehicle, as a
+	// fraction of the latitude span. The sheet covers the lower part of this
+	// map, so a plain centre would park the jeepney behind it.
+	centerBias = 0.32,
 	rememberRegion = false,
 	// Extra round controls (a crosshair, say) stacked under the layer button in
 	// the same column, so every screen's controls share one right edge.
@@ -442,6 +645,7 @@ export const Map = ({
 	controlsBottom = 420
 }) => {
 	const { theme, scheme } = useTheme()
+	const { width: screenW, height: screenH } = useWindowDimensions()
 	const mapType = usePrefs(s => s.mapType)
 	const mapRef = useRef(null)
 	const [initialRegion, setInitialRegion] = useState(rememberRegion ? null : DEFAULT_REGION)
@@ -449,6 +653,56 @@ export const Map = ({
 	// memoised per trip upstream, so a dropped first call would never retry —
 	// gate on readiness and the effect re-fires the moment the map can obey.
 	const [mapReady, setMapReady] = useState(false)
+	// Everything on the map that moves, under one clock.
+	const glidePoints = useMemo(
+		() => [
+			...vehicles.filter(v => v.position).map(v => ({ key: `v:${v.id}`, position: v.position })),
+			...(selfVehicle?.position ? [{ key: 'self', position: selfVehicle.position }] : []),
+			...(myLocation ? [{ key: 'me', position: myLocation }] : [])
+		],
+		[vehicles, selfVehicle?.position, myLocation]
+	)
+
+	const legs = useGlide(glidePoints)
+
+	const anchorKey = routeAnchor === 'self' ? 'self' : routeAnchor != null ? `v:${routeAnchor}` : null
+	// The last real fix. Which way round the corridor runs is a fact about where
+	// the vehicle IS, so it is decided here and not from the interpolated point
+	// — and it only changes when a ping lands.
+	const rawAnchor = anchorKey
+		? (routeAnchor === 'self' ? selfVehicle?.position : vehicles.find(v => v.id === routeAnchor)?.position) ?? null
+		: null
+
+	// Read once per render so the pin and the line cannot disagree by a frame.
+	const anchorPosition = anchorKey ? at(legs, anchorKey, rawAnchor) : null
+
+	// Orientation and the cut at the destination move once per ping, so they are
+	// paid then. Deciding orientation without the position is not a cheaper
+	// version of this: a corridor is driven both ways and most destinations sit
+	// in the middle of one, so the line would reverse onto the half the vehicle
+	// is not on and draw a chord straight across the city.
+	const orientedRoute = useMemo(
+		() => (route?.length ? orientRoute(rawAnchor, route, routeTarget) : []),
+		[route, routeTarget, rawAnchor?.latitude, rawAnchor?.longitude]
+	)
+
+	// The road still ahead, re-cut once per ping. Kept whole and memoised so a
+	// corridor of several hundred points is handed to the map once rather than
+	// re-uploaded on every frame of the glide.
+	const routeTail = useMemo(() => {
+		if (orientedRoute.length < 2 || !rawAnchor) return orientedRoute
+
+		return remainingRoute(rawAnchor, orientedRoute, null).slice(1)
+	}, [orientedRoute, rawAnchor?.latitude, rawAnchor?.longitude])
+
+	// The only part that moves: the stretch between the gliding pin and the road
+	// in front of it. Two points, rebuilt per frame, so the vehicle visibly eats
+	// the line as it travels.
+	const routeLeader = useMemo(
+		() => (routeTail.length && anchorPosition ? [anchorPosition, routeTail[0]] : []),
+		[routeTail, anchorPosition?.latitude, anchorPosition?.longitude]
+	)
+
 	// The settled viewport, which is what the place layer is drawn for. It is
 	// where the map is POINTED — chosen by dragging — never where the user is.
 	const [viewport, setViewport] = useState(null)
@@ -587,6 +841,47 @@ export const Map = ({
 		}
 	}, [locateNonce])
 
+	// Recentre on the followed vehicle. It glides continuously, so the camera
+	// is aimed at wherever it is at the moment of the tap rather than at a
+	// remembered position — otherwise the button lands the map where the
+	// jeepney used to be.
+	// Keep the latest raw fix reachable from inside the interval without making
+	// the interval depend on it — re-arming a follow timer every poll would stutter.
+	const centerOnRef = useRef(centerOn)
+	centerOnRef.current = centerOn
+
+	useEffect(() => {
+		if (!follow) return
+
+		// The zoom is held while following. "Focus on the vehicle" means the camera
+		// is committed to it; a commuter who wants to look around turns follow off,
+		// which is the whole point of it being a toggle.
+		const span = 0.012
+
+		const track = () => {
+			const here = at(legs, followKey, centerOnRef.current)
+			if (!here || !mapRef.current) return
+
+			// The longitude span must match the map's aspect ratio. Equal deltas on a
+			// tall screen make Google widen the latitude span to fit, which dilutes the
+			// bias below and parks the vehicle under the sheet.
+			mapRef.current.animateToRegion(
+				{
+					latitude: here.latitude - span * centerBias,
+					longitude: here.longitude,
+					latitudeDelta: span,
+					longitudeDelta: span * (screenW / screenH)
+				},
+				FOLLOW_STEP_MS
+			)
+		}
+
+		track()
+		const timer = setInterval(track, FOLLOW_STEP_MS)
+
+		return () => clearInterval(timer)
+	}, [follow, followKey, centerBias])
+
 	// Frame the matches ONCE per fitKey — a new search, a new route. The
 	// points array is rebuilt on every 8 s poll, and re-fitting on that would
 	// yank the camera back the moment anyone pans or zooms.
@@ -644,8 +939,11 @@ export const Map = ({
 				toolbarEnabled={false}
 				rotateEnabled={false}
 			>
-				{!!routeWaypoints?.length && (
-					<Polyline coordinates={routeWaypoints} strokeColor={theme.route[1]} strokeWidth={5} />
+				{routeTail.length > 1 && (
+					<Polyline coordinates={routeTail} strokeColor={theme.route[1]} strokeWidth={5} />
+				)}
+				{routeLeader.length === 2 && (
+					<Polyline coordinates={routeLeader} strokeColor={theme.route[1]} strokeWidth={5} />
 				)}
 
 				{/* No start dot: routes render navigation-style — the line begins
@@ -658,16 +956,36 @@ export const Map = ({
 
 				{!!destinationPin && <DestinationPin pin={destinationPin} />}
 
+				{/* Keyed by slot, not by coordinate: the driver's poll hands back a
+				    fresh array every few seconds and a coordinate key would unmount
+				    and re-rasterise every waiting pin on each GPS jitter. */}
+				{waitingPins.map((pin, i) => (
+					<WaitingPin key={i} pin={pin} />
+				))}
+
 				{vehicles
 					.filter(v => v.position)
 					.map(v => (
-						<VehiclePin key={v.id} vehicle={v} selected={v.id === selectedId} onSelect={onSelect} />
+						<VehiclePin
+							key={v.id}
+							vehicle={v}
+							position={at(legs, `v:${v.id}`, v.position)}
+							selected={v.id === selectedId}
+							onSelect={onSelect}
+						/>
 					))}
 
-				{!!selfVehicle?.position && <SelfVehiclePin vehicle={selfVehicle} />}
+				{!!selfVehicle?.position && (
+					<SelfVehiclePin vehicle={selfVehicle} position={at(legs, 'self', selfVehicle.position)} />
+				)}
 
 				{!!myLocation && (
-					<SettledMarker coordinate={myLocation} anchor={{ x: 0.5, y: 0.5 }} redrawKey="static" zIndex={100}>
+					<SettledMarker
+						coordinate={at(legs, 'me', myLocation)}
+						anchor={{ x: 0.5, y: 0.5 }}
+						redrawKey="static"
+						zIndex={100}
+					>
 						{/* The conventional blue dot: halo, white ring, solid core. */}
 						<View className="h-9 w-9 items-center justify-center rounded-full" style={{ backgroundColor: 'rgba(26,115,232,0.18)' }}>
 							<View

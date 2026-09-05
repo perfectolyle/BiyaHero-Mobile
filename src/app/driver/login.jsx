@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { View, ScrollView, Pressable, KeyboardAvoidingView, Platform } from 'react-native'
+import { View, KeyboardAvoidingView, Platform } from 'react-native'
 import { useRouter } from 'expo-router'
 import { Screen } from '@/components/ui/Screen'
+import { FormScroll } from '@/components/ui/FormScroll'
 import { Txt } from '@/components/ui/Txt'
 import { Header } from '@/components/ui/Header'
 import { Field } from '@/components/ui/Field'
@@ -46,7 +47,7 @@ export default function DriverLogin() {
 	return (
 		<Screen>
 			<KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
-				<ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="pb-6 pt-4 gap-6 flex-grow" keyboardShouldPersistTaps="handled">
+				<FormScroll contentContainerClassName="pb-6 pt-4 gap-6 flex-grow">
 					<Header eyebrow={copy.login.eyebrow} title={copy.login.title} />
 
 					<Txt variant="bodyM" className="text-fg-secondary">{copy.login.body}</Txt>
@@ -75,13 +76,18 @@ export default function DriverLogin() {
 
 					<View className="flex-1" />
 
-					<View className="gap-4">
+					<View className="gap-3">
 						<Button label={copy.login.submit} onPress={submit} loading={busy} disabled={!ready} />
-						<Pressable onPress={() => router.replace('/driver/vehicle')} className="items-center py-2 active:opacity-70">
-							<Txt variant="bodyMStrong" className="text-fg-secondary">{copy.login.noAccount}</Txt>
-						</Pressable>
+						{/* The way back to registration, as a control rather than a
+						    line of grey text among other grey text — the same
+						    mistake this screen's counterpart was making. */}
+						<Button
+							label={copy.login.noAccount}
+							tone="secondary"
+							onPress={() => router.replace('/driver/vehicle')}
+						/>
 					</View>
-				</ScrollView>
+				</FormScroll>
 			</KeyboardAvoidingView>
 		</Screen>
 	)

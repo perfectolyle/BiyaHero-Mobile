@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState } from 'react'
-import { distanceM, remainingRoute } from '@/services/geo'
-import { View, ScrollView, Pressable } from 'react-native'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { distanceM } from '@/services/geo'
+import { View, ScrollView, Pressable, ActivityIndicator } from 'react-native'
 import { useRouter, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { Sheet } from '@/components/ui/Sheet'
 import { Txt } from '@/components/ui/Txt'
 import { Chip } from '@/components/ui/Chip'
+import { fetchRoute } from '@/services/api'
 import { useStore } from '@/services/store'
 import { elevation } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
@@ -37,6 +38,7 @@ export default function MapHome() {
 	const searchedPosition = useStore(s => s.destinationPosition)
 	const vehiclesFor = useStore(s => s.vehiclesFor)
 	const error = useStore(s => s.error)
+	const loading = useStore(s => s.loading)
 	const destinationResolved = useStore(s => s.destinationResolved)
 	const selectedVehicleId = useStore(s => s.selectedVehicleId)
 	const setVehicleFilter = useStore(s => s.setVehicleFilter)
@@ -48,6 +50,12 @@ export default function MapHome() {
 	const myLocationOn = useStore(s => s.myLocationOn)
 	const toggleMyLocation = useStore(s => s.toggleMyLocation)
 	const enableMyLocation = useStore(s => s.enableMyLocation)
+	// The very first request has not answered yet, which is not the same as
+	// "nobody is driving". Announcing an empty fleet before the reply lands is
+	// the first thing a judge sees on a cold start, and every time the venue
+	// wifi hiccups.
+	const awaitingFirstReply = loading && vehicles.length === 0 && !error
+
 	const [locateNonce, setLocateNonce] = useState(0)
 
 	const onCrosshair = async () => {
@@ -73,12 +81,37 @@ export default function MapHome() {
 		() => vehicles.find(v => v.id === selectedVehicleId),
 		[vehicles, selectedVehicleId]
 	)
-	// Navigation-style: only the part of the route still ahead of the vehicle,
-	// oriented toward where the trip is actually going.
-	const routeWaypoints = useMemo(
-		() => (selected ? remainingRoute(selected.position, selected.route?.waypoints, selected.destinationPosition) : undefined),
-		[selected]
-	)
+	// The listing carries route IDS, not geometry — twenty-one polylines were
+	// 262 KB of JSON every eight seconds to draw at most one line. The corridor
+	// for the vehicle actually tapped is fetched once and kept, so re-selecting
+	// it costs nothing.
+	const [selectedRoute, setSelectedRoute] = useState(null)
+	const routeCache = useRef({})
+	const routeId = selected?.route?.id ?? null
+
+	useEffect(() => {
+		if (!routeId) return setSelectedRoute(null)
+
+		// Set before the request, not only after it: leaving the last vehicle's
+		// corridor on screen while the next one loads draws a line the selected
+		// jeepney does not run — and if the fetch fails, forever.
+		setSelectedRoute(routeCache.current[routeId] ?? null)
+		if (routeCache.current[routeId]) return
+
+		let cancelled = false
+		fetchRoute(routeId)
+			.then(r => {
+				const points = (r?.waypoints ?? []).map(w => ({ latitude: Number(w.lat), longitude: Number(w.lng) }))
+				routeCache.current[routeId] = points
+				if (!cancelled) setSelectedRoute(points)
+			})
+			// No line beats a wrong one; the vehicle pin still shows where it is.
+			.catch(() => !cancelled && setSelectedRoute(null))
+
+		return () => {
+			cancelled = true
+		}
+	}, [routeId])
 
 	// The place the map should name: the selected vehicle's destination first,
 	// otherwise the destination being searched for. Both are public places.
@@ -86,7 +119,7 @@ export default function MapHome() {
 	// head is exactly the floating squiggle the pin exists to prevent.
 	const destinationPin = useMemo(() => {
 		if (selected) {
-			const at = selected.destinationPosition ?? selected.route?.waypoints?.[selected.route.waypoints.length - 1]
+			const at = selected.destinationPosition ?? selectedRoute?.[selectedRoute.length - 1]
 			if (at) return { ...at, label: selected.destination }
 		}
 		if (destination?.lat != null) {
@@ -97,7 +130,7 @@ export default function MapHome() {
 			return { ...searchedPosition, label: destination.name }
 		}
 		return null
-	}, [selected, destination, searchedPosition])
+	}, [selected, selectedRoute, destination, searchedPosition])
 
 	const fitTo = useMemo(
 		() =>
@@ -174,7 +207,9 @@ export default function MapHome() {
 				onSelect={openVehicle}
 				onMapPress={() => selectVehicle(null)}
 				fitKey={fitKey}
-				routeWaypoints={routeWaypoints}
+				route={selectedRoute}
+				routeTarget={selected?.destinationPosition ?? null}
+				routeAnchor={selectedVehicleId}
 				destinationPin={destinationPin}
 				fitTo={fitTo}
 				myLocation={myLocation}
@@ -208,9 +243,11 @@ export default function MapHome() {
 					<View className="gap-3 pb-3">
 						<View className="gap-[3px]">
 							<Txt variant="headingM">
-								{destination
-									? copy.search.resultsTitle(vehicles.length, destination.name)
-									: copy.mapHome.activeCount(vehicles.length)}
+								{awaitingFirstReply
+									? copy.common.loading
+									: destination
+										? copy.search.resultsTitle(vehicles.length, destination.name)
+										: copy.mapHome.activeCount(vehicles.length)}
 							</Txt>
 							<Txt variant="caption" className="text-fg-secondary">
 								{destination
@@ -245,7 +282,11 @@ export default function MapHome() {
 				)}
 
 				<ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-[10px] pb-8">
-					{vehicles.length === 0 ? (
+					{awaitingFirstReply ? (
+						<View className="items-center py-10">
+							<ActivityIndicator color={theme.brand.hover} />
+						</View>
+					) : vehicles.length === 0 ? (
 						<EmptyState
 							// Three different silences, and only one of them is "nobody is
 							// driving": the request may have failed, or the place may not

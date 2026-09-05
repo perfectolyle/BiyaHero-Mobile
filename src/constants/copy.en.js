@@ -37,7 +37,7 @@ export const roleSelect = {
 	commuter: {
 		title: "I'm riding",
 		badge: 'NO ACCOUNT',
-		body: 'See active vehicles right away. No sign-up and no password. Your location is optional and never leaves your phone.'
+		body: 'See active vehicles right away. No sign-up and no password. Your location is optional and never leaves your phone unless you show it to one driver.'
 	},
 	driver: {
 		title: "I'm driving",
@@ -64,7 +64,7 @@ export const settings = {
 	clearSearches: 'Clear recent searches',
 	clearSearchesHint: 'Saved on this device only',
 	searchesCleared: 'Searches cleared',
-	privacy: 'Biyahero has no accounts for passengers. No personal information is stored on the server.'
+	privacy: 'Biyahero has no accounts for passengers. No personal information is stored on the server. Your location leaves your phone only if you show it to one driver, and it is deleted when that trip ends.'
 }
 
 export const mapHome = {
@@ -78,6 +78,14 @@ export const mapHome = {
 	layerNames: { standard: 'Default', hybrid: 'Satellite', terrain: 'Terrain' },
 	myLocationOn: 'Now showing your location',
 	myLocationOff: 'Your location is hidden',
+	/**
+	 * The banner that keeps the opt-in honest once the commuter leaves the
+	 * vehicle screen. It has to name WHO can see them — an unnamed "someone can
+	 * see you" reads as a warning about a stranger, not as a thing they chose —
+	 * and it has to say how to stop, because it is the only way out.
+	 */
+	watching: 'A driver can see you',
+	watchingStop: 'They can see you — tap to stop',
 	near: plate => `${plate} is close!`,
 	filters: [
 		{ key: 'all', label: 'All' },
@@ -93,7 +101,7 @@ export const search = {
 	recent: 'RECENT SEARCHES',
 	places: 'PLACES',
 	popular: 'POPULAR DESTINATIONS',
-	privacy: 'Saved on your device only. No account, and your location never leaves your phone.',
+	privacy: 'Saved on your device only. No account, and your location never leaves your phone unless you show it to one driver.',
 	activeCount: n => `${n} vehicle${n === 1 ? '' : 's'} active now`,
 	resultsTitle: (n, dest) => `${n} vehicle${n === 1 ? '' : 's'} passing ${dest}`,
 	resultsSubtitle: (dest, radius) => `Routes passing within ${radius} of ${dest}`,
@@ -121,13 +129,36 @@ export const vehicle = {
 	lastOnStreet: street => `Last seen on ${street}`,
 	verifiedDriver: years => `Verified driver · ${years} year${years === 1 ? '' : 's'} on the route`,
 	away: m => (m < 1000 ? `${m} m away from you` : `${(m / 1000).toFixed(1)} km away from you`),
+	photoAlt: dest => `Photo of the vehicle heading to ${dest}`,
+	/** Opens the driver sheet. The name itself now lives inside it. */
+	viewDriver: 'View the driver',
+	viewDriverShort: 'Driver',
+	bodyLabel: 'Body no.',
+	driverSheetTitle: 'About the driver',
+	modelLabel: 'Model',
+	operatorLabel: 'Operator',
+	plateLabel: 'Plate',
+	typeLabel: 'Vehicle type',
+	unknownModel: 'Not stated',
+	centerOnVehicle: 'Centre on the vehicle',
 	nearest: 'Closest to you',
 	passesWithin: (m, dest) => `Passes ${m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`} from ${dest}`,
 	tripEndedTitle: 'This trip has ended',
 	tripEndedBody: 'The driver finished the run, so they are off the map. Go back to see other vehicles.',
 	unverifiedDriver: years => `Driver · ${years} year${years === 1 ? '' : 's'} on Biyahero`,
 	staleTitle: 'Last known position',
-	staleBody: 'No live GPS. Showing when this vehicle was last seen.'
+	staleBody: 'No live GPS. Showing when this vehicle was last seen.',
+	/**
+	 * The only screen where a commuter is told what they are agreeing to, so the
+	 * scope has to sit in the words: one driver, one trip. Both halves are
+	 * literal — no other driver is ever sent this, and the position is deleted
+	 * when the trip ends. The consent outlives this screen on purpose, which is
+	 * why WatchingBanner exists to keep saying so.
+	 */
+	watchTitle: 'Show where I am waiting',
+	watchBody: 'This driver only, while the trip is running.',
+	watchOn: 'This driver can see you now.',
+	watchOff: 'The driver can no longer see you.'
 }
 
 export const capacity = {
@@ -168,15 +199,28 @@ export const login = {
 export const vehicleDetails = {
 	eyebrow: 'VEHICLE DETAILS',
 	title: 'What vehicle do you drive?',
-	body: 'Passengers see this so they can recognise you on the road.',
+	body: 'This is how they recognise you on the road.',
 	typeLabel: 'VEHICLE TYPE',
 	plateLabel: 'PLATE',
 	platePlaceholder: 'NCR 8842',
 	modelLabel: 'MODEL',
 	modelPlaceholder: 'Sarao 2018',
+	operatorLabel: 'COMPANY',
+	operatorPlaceholder: 'Victory Liner',
 	bodyLabel: 'BODY NO.',
+	bodyNote: 'Painted on the body, not the plate.',
 	bodyPlaceholder: '214',
 	plateNote: 'The plate is public — it is painted on the vehicle.',
+	/**
+	 * The vehicle photo is shown to strangers, so the words have to say that
+	 * plainly. It is also why the note names the vehicle and never the driver.
+	 */
+	photoLabel: 'VEHICLE PHOTO',
+	needPhoto: 'Take or choose a photo of the vehicle first.',
+	photoTake: 'Take one',
+	photoPick: 'Choose',
+	photoRetake: 'Change the photo',
+	photoDenied: 'Camera or gallery permission is needed.',
 	continue: 'Continue',
 	invalidPlate: 'The vehicle plate is required.',
 	editTitle: 'Edit vehicle',
@@ -205,7 +249,7 @@ export const licence = {
 	permissionBody: 'It is only used to photograph your licence.',
 	grant: 'Allow camera',
 	expiryLabel: 'EXPIRY DATE',
-	expiryPlaceholder: 'YYYY-MM-DD',
+	expiryPlaceholder: 'Pick a date',
 	invalidExpiry: 'Enter the expiry date (YYYY-MM-DD).',
 	expiredLicence: 'Your licence has expired.',
 	invalidNumber: 'Wrong number format. It should look like N01-19-123456.',
@@ -304,7 +348,19 @@ export const activeTrip = {
 	change: 'Change',
 	capacityPrompt: 'HOW FULL IS YOUR VEHICLE?',
 	end: 'End the trip',
-	endNote: 'This stops broadcasting your location. You disappear from passenger maps immediately.'
+	endNote: 'This stops broadcasting your location. You disappear from passenger maps immediately.',
+	watchingNone: 'No commuters are watching you yet',
+	watchingNoneBody: 'Commuters who agree to show where they are waiting will appear here.',
+	watchingCount: n => `${n} commuter${n === 1 ? '' : 's'} watching you`,
+	/**
+	 * The line that explains the filled pin. Without it the driver has to guess
+	 * what the colour means, and a colour nobody explained is worse than none.
+	 */
+	watchingOnRoute: n => `${n} on your route`,
+	watchingNoneOnRoute: 'None on your route yet — they are off to the side of it',
+	watchingNearest: m => `nearest ${m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`} ahead`,
+	/** No GPS fix means no honest distance — same rule as freshness.unknown: never invent one. */
+	watchingNoFix: 'No distance until GPS returns'
 }
 
 export const driverProfile = {
@@ -347,7 +403,7 @@ export const help = {
 		},
 		{
 			q: 'Can drivers see passengers?',
-			a: 'No. Biyahero never requests passenger locations, so there is no heatmap and no count of people waiting.'
+			a: 'No, unless you choose to be seen. Every vehicle has a switch: turn it on and that one driver sees where you are waiting, until the trip ends. There is no heatmap, and nobody who declined is counted.'
 		},
 		{
 			q: 'How do I change my plate or vehicle?',
@@ -358,6 +414,7 @@ export const help = {
 
 export const common = {
 	back: 'Back',
+	close: 'Close',
 	cancel: 'Cancel',
 	retry: 'Try again',
 	loading: 'One moment…',

@@ -37,6 +37,14 @@ module.exports = ({ config }) => ({
 	},
 	plugins: [
 		'expo-router',
+		'@react-native-community/datetimepicker',
+		[
+			'expo-image-picker',
+			{
+				photosPermission:
+					'Pumili ng larawan ng sasakyan mo para makilala ito ng mga pasahero.'
+			}
+		],
 		[
 			'expo-camera',
 			{

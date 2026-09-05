@@ -70,19 +70,30 @@ export const placeLabel = place =>
 	[place?.street, place?.district, place?.subregion, place?.city, place?.name]
 		.find(value => value && !isPlusCode(value)) ?? null
 
-export const remainingRoute = (position, waypoints, target = null) => {
+/**
+ * The corridor pointed the way this run is driving, cut at the destination.
+ *
+ * Split out from remainingRoute because the two halves change at different
+ * rates: which way round the line runs depends on the vehicle's ACTUAL fix and
+ * only changes when a ping lands, while the trim behind the vehicle is redone
+ * every animation frame. Deciding orientation from the target alone is not a
+ * cheaper version of this — it is a different, wrong answer. A route is stored
+ * once and driven both ways, and most destinations sit mid-corridor rather than
+ * at an end, so without the position the line reverses onto the half the
+ * vehicle is not on and collapses to a chord across the city.
+ */
+export const orientRoute = (position, waypoints, target = null) => {
 	if (!waypoints?.length) return waypoints ?? []
 
 	let pts = waypoints
 	if (pts.length < 2) return pts
 
-	let posSeg = position ? nearestSegment(position, pts) : null
+	const posSeg = position ? nearestSegment(position, pts) : null
 	let tgtSeg = target ? nearestSegment(target, pts) : null
 
 	// The vehicle must come BEFORE the destination along the drawn line.
 	if (posSeg && tgtSeg && tgtSeg.i + tgtSeg.t < posSeg.i + posSeg.t) {
 		pts = [...pts].reverse()
-		posSeg = nearestSegment(position, pts)
 		tgtSeg = nearestSegment(target, pts)
 	} else if (!posSeg && tgtSeg && tgtSeg.i + tgtSeg.t < (pts.length - 1) / 2) {
 		pts = [...pts].reverse()
@@ -90,13 +101,17 @@ export const remainingRoute = (position, waypoints, target = null) => {
 	}
 
 	// Cut the corridor at the destination and land the line exactly on it.
-	let out = tgtSeg ? [...pts.slice(0, tgtSeg.i + 1), target] : pts
+	return tgtSeg ? [...pts.slice(0, tgtSeg.i + 1), target] : pts
+}
+
+export const remainingRoute = (position, waypoints, target = null) => {
+	const pts = orientRoute(position, waypoints, target)
 
 	// Consume everything behind the vehicle, anchoring the line on it.
-	if (posSeg) {
-		const from = Math.min(posSeg.i, out.length - 2)
-		out = [position, ...out.slice(from + 1)]
-	}
+	if (!position || pts.length < 2) return pts
 
-	return out
+	const posSeg = nearestSegment(position, pts)
+	const from = Math.min(posSeg.i, pts.length - 2)
+
+	return [position, ...pts.slice(from + 1)]
 }

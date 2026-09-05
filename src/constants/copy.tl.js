@@ -37,7 +37,7 @@ export const roleSelect = {
 	commuter: {
 		title: 'Sakay ako',
 		badge: 'WALANG ACCOUNT',
-		body: 'Tingnan agad ang mga aktibong sasakyan. Walang sign-up at walang password. Opsyonal ang lokasyon mo — hindi ito ipinapadala sa server.'
+		body: 'Tingnan agad ang mga aktibong sasakyan. Walang sign-up at walang password. Opsyonal ang lokasyon mo — hindi ito ipinapadala sa server maliban kung ipakita mo ito sa isang drayber.'
 	},
 	driver: {
 		title: 'Driver ako',
@@ -64,7 +64,7 @@ export const settings = {
 	clearSearches: 'Burahin ang mga hinanap',
 	clearSearchesHint: 'Naka-save lang sa device na ito',
 	searchesCleared: 'Nabura ang mga hinanap',
-	privacy: 'Walang account ang Biyahero para sa mga pasahero. Walang personal na impormasyong iniimbak sa server.'
+	privacy: 'Walang account ang Biyahero para sa mga pasahero. Walang personal na impormasyong iniimbak sa server. Umaalis lang sa telepono ang lokasyon mo kung ipakita mo ito sa isang drayber, at binubura ito pagkatapos ng biyahe.'
 }
 
 export const mapHome = {
@@ -79,6 +79,14 @@ export const mapHome = {
 	layerNames: { standard: 'Karaniwan', hybrid: 'Satellite', terrain: 'Terrain' },
 	myLocationOn: 'Ipinapakita na ang lokasyon mo',
 	myLocationOff: 'Itinago ang lokasyon mo',
+	/**
+	 * The banner that keeps the opt-in honest once the commuter leaves the
+	 * sasakyan screen. It has to name WHO can see them — "may nakakakita sa iyo"
+	 * with no name reads as a warning about a stranger, not as a thing they
+	 * chose — and it has to say how to stop, because it is the only way out.
+	 */
+	watching: 'May drayber na nakakakita sa iyo',
+	watchingStop: 'Nakikita ka nito — i-tap para itigil',
 	near: plate => `Malapit na ang ${plate}!`,
 	filters: [
 		{ key: 'all', label: 'Lahat' },
@@ -94,7 +102,7 @@ export const search = {
 	recent: 'MGA HULING HINANAP',
 	places: 'MGA LUGAR',
 	popular: 'MGA SIKAT NA DESTINASYON',
-	privacy: 'Naka-save sa device mo lang. Walang account, at hindi umaalis sa telepono mo ang lokasyon mo.',
+	privacy: 'Naka-save sa device mo lang. Walang account, at hindi umaalis sa telepono mo ang lokasyon mo maliban kung ipakita mo ito sa isang drayber.',
 	activeCount: n => `${n} sasakyan aktibo ngayon`,
 	/** Corridor match, not a route lookup — 400 m either side of the destination. */
 	resultsTitle: (n, dest) => `${n} sasakyan dumadaan sa ${dest}`,
@@ -118,7 +126,7 @@ export const vehicle = {
 	type: 'URI',
 	capacity: 'KAPASIDAD',
 	live: 'Live',
-	/** Street name, not a distance — the app never learns where the commuter is. */
+	/** Street name, not a distance — this line never depends on knowing where the commuter is. */
 	currentlyAt: street => `Kasalukuyang nasa ${street}`,
 	routeLength: km => `${km} km ang buong ruta`,
 	onStreet: street => `Nasa ${street} ngayon`,
@@ -126,13 +134,36 @@ export const vehicle = {
 	verifiedDriver: years => `Beripikadong drayber · ${years} taon sa ruta`,
 	/** Straight-line distance — honest now, because the commuter opted in. */
 	away: m => (m < 1000 ? `${m} m ang layo sa iyo` : `${(m / 1000).toFixed(1)} km ang layo sa iyo`),
+	photoAlt: dest => `Larawan ng sasakyang papuntang ${dest}`,
+	/** Opens the driver sheet. The name itself now lives inside it. */
+	viewDriver: 'Tingnan ang drayber',
+	viewDriverShort: 'Drayber',
+	bodyLabel: 'Body no.',
+	driverSheetTitle: 'Tungkol sa drayber',
+	modelLabel: 'Modelo',
+	operatorLabel: 'Kompanya',
+	plateLabel: 'Plaka',
+	typeLabel: 'Uri ng sasakyan',
+	unknownModel: 'Hindi nakasaad',
+	centerOnVehicle: 'Itutok sa sasakyan',
 	nearest: 'Pinakamalapit sa iyo',
 	passesWithin: (m, dest) => `Dumadaan ${m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`} mula sa ${dest}`,
 	tripEndedTitle: 'Tapos na ang biyaheng ito',
 	tripEndedBody: 'Tinapos ng drayber ang biyahe, kaya wala na siya sa mapa. Bumalik para makita ang ibang sasakyan.',
 	unverifiedDriver: taon => `Drayber · ${taon} taon sa Biyahero`,
 	staleTitle: 'Huling alam na posisyon',
-	staleBody: 'Walang live na GPS. Ipinapakita ang oras kung kailan huling nakita.'
+	staleBody: 'Walang live na GPS. Ipinapakita ang oras kung kailan huling nakita.',
+	/**
+	 * The only screen where a commuter is told what they are agreeing to, so the
+	 * scope has to sit in the words: one driver, one trip. Both halves are
+	 * literal — no other driver is ever sent this, and the position is deleted
+	 * when the trip ends. The consent outlives this screen on purpose, which is
+	 * why WatchingBanner exists to keep saying so.
+	 */
+	watchTitle: 'Ipakita kung nasaan ako',
+	watchBody: 'Sa drayber na ito lang, habang tumatakbo ang biyahe.',
+	watchOn: 'Nakikita ka na ng drayber na ito.',
+	watchOff: 'Hindi ka na nakikita ng drayber.'
 }
 
 export const capacity = {
@@ -182,15 +213,28 @@ export const login = {
 export const vehicleDetails = {
 	eyebrow: 'DETALYE NG SASAKYAN',
 	title: 'Anong sasakyan ang minamaneho mo?',
-	body: 'Ipapakita ito sa mga pasahero para makilala ka nila sa kalsada.',
+	body: 'Makikilala ka nila nito sa kalsada.',
 	typeLabel: 'URI NG SASAKYAN',
 	plateLabel: 'PLAKA',
 	platePlaceholder: 'NCR 8842',
 	modelLabel: 'MODELO',
 	modelPlaceholder: 'Sarao 2018',
+	operatorLabel: 'KOMPANYA',
+	operatorPlaceholder: 'Victory Liner',
 	bodyLabel: 'BODY NO.',
+	bodyNote: 'Nakapinta sa katawan, hindi ang plaka.',
 	bodyPlaceholder: '214',
 	plateNote: 'Pampubliko ang plaka — nakapinta na ito sa sasakyan.',
+	/**
+	 * The vehicle photo is shown to strangers, so the words have to say that
+	 * plainly. It is also why the note names the sasakyan and never the driver.
+	 */
+	photoLabel: 'LARAWAN NG SASAKYAN',
+	needPhoto: 'Kunan o pumili muna ng larawan ng sasakyan.',
+	photoTake: 'Kunan',
+	photoPick: 'Pumili',
+	photoRetake: 'Palitan ang larawan',
+	photoDenied: 'Kailangan ng pahintulot para sa camera o gallery.',
 	continue: 'Magpatuloy',
 	invalidPlate: 'Kailangan ang plaka ng sasakyan.',
 	editTitle: 'Baguhin ang sasakyan',
@@ -225,7 +269,7 @@ export const help = {
 		},
 		{
 			q: 'Nakikita ba ng mga drayber ang mga pasahero?',
-			a: 'Hindi. Hindi hinihingi ng Biyahero ang lokasyon ng mga pasahero, kaya walang heatmap at walang bilang ng naghihintay.'
+			a: 'Hindi, maliban kung ikaw mismo ang magpapakita. May switch sa bawat sasakyan: kapag binuksan mo ito, makikita ng drayber na iyon lang kung saan ka naghihintay, hanggang matapos ang biyahe. Walang heatmap at walang bilang ng mga hindi pumayag.'
 		},
 		{
 			q: 'Paano papalitan ang plaka o sasakyan?',
@@ -254,7 +298,7 @@ export const licence = {
 	permissionBody: 'Ginagamit lang ito para kunan ng larawan ang lisensya mo.',
 	grant: 'Payagan ang camera',
 	expiryLabel: 'PETSA NG EXPIRY',
-	expiryPlaceholder: 'YYYY-MM-DD',
+	expiryPlaceholder: 'Pumili ng petsa',
 	invalidExpiry: 'Ilagay ang petsa ng expiry (YYYY-MM-DD).',
 	expiredLicence: 'Paso na ang lisensya mo.',
 	invalidNumber: 'Mali ang porma ng numero. Dapat katulad ng N01-19-123456.',
@@ -358,7 +402,19 @@ export const activeTrip = {
 	change: 'Palitan',
 	capacityPrompt: 'GAANO KAPUNO ANG SASAKYAN MO?',
 	end: 'Tapusin ang biyahe',
-	endNote: 'Ititigil nito ang pag-broadcast ng lokasyon mo. Mawawala ka agad sa mapa ng mga pasahero.'
+	endNote: 'Ititigil nito ang pag-broadcast ng lokasyon mo. Mawawala ka agad sa mapa ng mga pasahero.',
+	watchingNone: 'Wala pang pasaherong nakatutok sa iyo',
+	watchingNoneBody: 'Lalabas dito ang mga pasaherong pumayag na ipakita kung saan sila naghihintay.',
+	watchingCount: n => `${n} pasahero ang nakatutok sa iyo`,
+	/**
+	 * The line that explains the itim na pin. Without it the driver has to guess
+	 * what the colour means, and a colour nobody explained is worse than none.
+	 */
+	watchingOnRoute: n => `${n} nasa ruta mo`,
+	watchingNoneOnRoute: 'Wala pa sa ruta mo — nasa gilid sila ng dinadaanan mo',
+	watchingNearest: m => `pinakamalapit ${m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`} sa unahan`,
+	/** No GPS fix means no honest distance — same rule as freshness.unknown: never invent one. */
+	watchingNoFix: "Walang layo hangga't walang GPS"
 }
 
 export const driverProfile = {
@@ -381,6 +437,7 @@ export const driverProfile = {
 
 export const common = {
 	back: 'Bumalik',
+	close: 'Isara',
 	cancel: 'Kanselahin',
 	retry: 'Subukan ulit',
 	loading: 'Sandali lang…',
