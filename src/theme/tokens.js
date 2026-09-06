@@ -14,6 +14,24 @@ export const primitives = {
 		700: '#1E293B', 600: '#263449', 500: '#3A4A63', 400: '#64748B',
 		300: '#94A3B8', 200: '#CBD5E1', 100: '#E2E8F0', 50: '#F1F5F9', 0: '#FFFFFF'
 	},
+	/**
+	 * A ramp for dark surfaces.
+	 *
+	 * `ink` is tuned for light UI and is far too compressed at its dark end:
+	 * 900, 850, 800 and 700 all sit within 1.3:1 of each other, so on night the
+	 * page, a card and a text input were the same colour to the eye — measured,
+	 * an input's fill was 1.10:1 against the screen behind it — and a border
+	 * drawn from ink 600 came out at 1.35:1, which is invisible. Fields had no
+	 * edges and no fill, so nothing said where to tap.
+	 *
+	 * These steps are spaced so each level reads as a level, and the light end
+	 * clears 4.5:1 for text and 3:1 for borders on every one of them.
+	 */
+	slate: {
+		950: '#070C15', 900: '#0B1220', 850: '#151E2F', 800: '#1C2637',
+		700: '#26334A', 600: '#3A4763', 500: '#4E5D78', 400: '#6B7B96',
+		300: '#8C9BB2', 200: '#AFBCCE'
+	},
 	/** Signal Yellow — the language of PH jeepney route boards and transit signage. */
 	signal: { 700: '#B88A00', 600: '#E0A800', 500: '#FFC72C', 400: '#FFD75E', 300: '#FFE494', 100: '#FFF6DC' },
 	green: { 900: '#052E16', 600: '#15803D', 500: '#22C55E', 400: '#4ADE80', 100: '#DCFCE7' },
@@ -74,21 +92,26 @@ export const day = {
 }
 
 export const night = {
-	surface: { canvas: p.ink[900], default: p.ink[800], raised: p.ink[700], sunken: p.ink[950], inverse: p.ink[0], scrim: p.ink[950] },
+	surface: { canvas: p.slate[900], default: p.slate[800], raised: p.slate[700], sunken: p.slate[850], inverse: p.ink[0], scrim: p.slate[950] },
 	// Deliberately only TWO text tiers. A third grey fails 4.5:1 on dark surfaces —
 	// muted greys live in `icon` and `border`, where the 3:1 UI threshold applies.
-	text: { primary: p.ink[0], secondary: p.ink[300], inverse: p.ink[900], onBrand: p.ink[950], danger: p.red[400], success: p.green[400] },
-	brand: { default: p.signal[500], hover: p.signal[400], subtle: p.signal[700] },
-	border: { subtle: p.ink[600], default: p.ink[500], strong: p.ink[400], focus: p.signal[500] },
-	icon: { primary: p.ink[0], secondary: p.ink[300], muted: p.ink[400] },
+	text: { primary: p.ink[0], secondary: p.slate[200], inverse: p.slate[900], onBrand: p.ink[950], danger: p.red[400], success: p.green[400] },
+	// `subtle` is a BACKGROUND on night, not a tint of the brand: it sits under a
+	// Signal Yellow glyph. signal 700 was a mid amber, so a yellow icon on it had
+	// almost nothing to separate them.
+	brand: { default: p.signal[500], hover: p.signal[400], subtle: '#3A2D08' },
+	border: { subtle: p.slate[500], default: p.slate[400], strong: p.slate[300], focus: p.signal[500] },
+	icon: { primary: p.ink[0], secondary: p.slate[200], muted: p.slate[300] },
 	capacity: {
-		open: { fg: p.green[400], bg: p.green[900] },
-		filling: { fg: p.amber[400], bg: p.amber[900] },
-		full: { fg: p.red[400], bg: p.red[900] },
-		stale: { fg: p.ink[300], bg: p.ink[600] }
+		// The 900-level primitives are near-black at these sizes; a chip needs a
+		// fill that reads as a fill behind text that clears 4.5:1 on it.
+		open: { fg: p.green[400], bg: '#0C2C18' },
+		filling: { fg: p.amber[400], bg: '#33240A' },
+		full: { fg: p.red[400], bg: '#3A1414' },
+		stale: { fg: p.slate[200], bg: '#28324A' }
 	},
 	action: { dangerBg: p.red[500], dangerFg: p.ink[0] },
-	map: { base: p.ink[850], block: p.ink[800], road: p.ink[700], roadMajor: p.ink[600], water: p.water.night, park: p.park.night },
+	map: { base: p.slate[850], block: p.slate[800], road: p.slate[700], roadMajor: p.slate[600], water: p.water.night, park: p.park.night },
 	place: {
 		terminal: '#AECBFA',
 		school: '#8AB4F8',
