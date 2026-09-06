@@ -40,6 +40,21 @@ const PEEK = 330
  */
 const MINI = 92
 
+/**
+ * The sheet rests taller with a jeepney open than it does over the list.
+ *
+ * The detail has four things to show and the last two — the street it is on
+ * right now, and the switch that shows the driver where you are waiting — are
+ * the reason the screen exists. At the list's 330 they sat under the fold with
+ * nothing saying they were there.
+ *
+ * 470 is what a 16:9 photo costs once those two are above the fold. It is a
+ * tall sheet; the map is a drag away at the collapsed stop. The map padding
+ * does NOT follow this, so opening a vehicle raises the sheet over a map that
+ * stays exactly where it was.
+ */
+const DETAIL_PEEK = 470
+
 export default function MapHome() {
 	const copy = useCopy()
 	const { theme, statusBar } = useTheme()
@@ -115,6 +130,7 @@ export default function MapHome() {
 		[vehicles, selectedVehicleId]
 	)
 	const degraded = !!selected?.stale || degradedFleet
+	const sheetPeek = selected ? DETAIL_PEEK : PEEK
 	// The listing carries route IDS, not geometry — twenty-one polylines were
 	// 262 KB of JSON every eight seconds to draw at most one line. The corridor
 	// for the vehicle actually tapped is fetched once and kept, so re-selecting
@@ -323,7 +339,7 @@ export default function MapHome() {
 						{crosshair}
 					</>
 				}
-				controlsBottom={PEEK + 20}
+				controlsBottom={sheetPeek + 20}
 				// The sheet, as map padding. Without it Google's own attribution sits
 				// under the sheet in every state — the sheet cannot go below its peek
 				// — which is a Maps terms violation as well as a thing the commuter
@@ -333,7 +349,7 @@ export default function MapHome() {
 				// left of the map instead of floating a third of the way up it. The
 				// fit is told about the rest of the sheet separately.
 				bottomInset={MINI}
-				fitBottomExtra={PEEK - MINI}
+				fitBottomExtra={sheetPeek - MINI}
 			/>
 
 			{selected ? (
@@ -368,7 +384,7 @@ export default function MapHome() {
 			)}
 
 			<Sheet
-				peekHeight={PEEK}
+				peekHeight={sheetPeek}
 				miniHeight={MINI}
 				position={sheetPos}
 				onPositionChange={setSheetPos}

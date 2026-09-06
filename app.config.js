@@ -5,10 +5,33 @@ module.exports = ({ config }) => ({
 	name: 'Biyahero',
 	slug: 'biyahero',
 	scheme: 'biyahero',
-	version: '1.0.14',
+	version: '1.0.15',
 	orientation: 'portrait',
 	icon: './src/assets/icon.png',
 	userInterfaceStyle: 'light',
+	/*
+	 * Over-the-air updates, so a tester does not have to be handed a new APK for
+	 * every JS change.
+	 *
+	 * `appVersion` ties an update to the `version` above: a build only accepts
+	 * updates published against the same version string, which is what stops a
+	 * JS bundle expecting a native module the installed binary does not have.
+	 * Bumping `version` therefore REQUIRES a fresh install, and anything that
+	 * changes native code — a new native module, a permission, the Maps key —
+	 * does too. Everything else can go out with `eas update`.
+	 *
+	 * The channel is named here rather than left to EAS Build, because these
+	 * APKs are built locally with gradle; without it a local build subscribes
+	 * to nothing and would never see an update.
+	 */
+	runtimeVersion: { policy: 'appVersion' },
+	updates: {
+		url: 'https://u.expo.dev/7556787b-9d13-409d-996a-42a640c6de1d',
+		requestHeaders: { 'expo-channel-name': 'sqa' },
+		// A tester on venue wifi should get the app, not a spinner: launch on
+		// what is already on the device and fetch the new bundle behind it.
+		fallbackToCacheTimeout: 0
+	},
 	ios: {
 		supportsTablet: true,
 		bundleIdentifier: 'com.anonymous.biyahero',

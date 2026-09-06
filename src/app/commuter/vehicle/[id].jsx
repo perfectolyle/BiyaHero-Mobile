@@ -65,7 +65,7 @@ export default function VehicleDetail() {
 	 * the one switch on the screen. The photo and the driver row are reference
 	 * material and are allowed to sit under the fold.
 	 */
-	const PEEK = 340
+	const PEEK = 470
 	/** Collapsed: a grabber and a chevron, so the map can have the screen. */
 	const MINI = 92
 	const [driverOpen, setDriverOpen] = useState(false)

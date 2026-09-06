@@ -123,9 +123,11 @@ export const VehicleSheetBody = ({ vehicle, degraded = false }) => {
 			    only once it is close enough to read; paint and shape are what a
 			    commuter matches from a corner.
 
-			    A fixed 16:9 box, not a fixed height: h-40 was a 2.16:1 letterbox on
-			    one phone and nearly square on a narrow one, so one photo cropped
-			    differently per device. */}
+			    A ratio, not a fixed height: h-40 was a 2.16:1 letterbox on one phone
+			    and nearly square on a narrow one, so one photo cropped differently
+			    per device. 16:9 because anything tighter crops the jeepney rather
+			    than framing it — the sheet is made taller instead, so the street it
+			    is on and the opt-in switch still clear the fold. */}
 			{!!photoSource && (
 				<Image
 					source={photoSource}

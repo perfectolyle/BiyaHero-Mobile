@@ -1,30 +1,32 @@
 {
-	"cli": {
-		"version": ">= 22.0.0",
-		"appVersionSource": "remote"
-	},
-	"build": {
-		"development": {
-			"developmentClient": true,
-			"distribution": "internal",
-			"env": {
-				"NPM_CONFIG_LEGACY_PEER_DEPS": "true"
-			}
-		},
-		"preview": {
-			"distribution": "internal",
-			"env": {
-				"npm_config_legacy_peer_deps": "true"
-			}
-		},
-		"production": {
-			"autoIncrement": true,
-			"env": {
-				"npm_config_legacy_peer_deps": "true"
-			}
-		}
-	},
-	"submit": {
-		"production": {}
-	}
+  "cli": {
+    "version": ">= 22.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
+      },
+      "channel": "development"
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "npm_config_legacy_peer_deps": "true"
+      },
+      "channel": "sqa"
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "npm_config_legacy_peer_deps": "true"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
 }
