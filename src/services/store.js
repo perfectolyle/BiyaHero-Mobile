@@ -55,6 +55,18 @@ let toastTimer = null
 let lastStreetLookup = 0
 // Only the newest /active-vehicles reply may write to the store.
 let refreshSeq = 0
+/**
+ * The sequence number of the last reply that actually SUCCEEDED.
+ *
+ * Failure was gated on "is a newer request already running", which during a
+ * real outage is always true: the poll fires every 8 s and the client gives up
+ * at 10 s, so every rejection arrived two seconds after its own successor had
+ * bumped the counter, and the offline state could never be set. The map sat on
+ * "One moment…" indefinitely with no way to say the server was unreachable.
+ * What the guard is actually for is stopping a slow straggler from flipping a
+ * good list to offline — so it is a newer SUCCESS that should silence it.
+ */
+let lastOkSeq = 0
 
 /**
  * The broadcast watcher itself: streams the driver's fix to the server every
@@ -356,6 +368,7 @@ export const useStore = create((set, get) => ({
 			// header ends up describing a list it did not produce.
 			if (seq !== refreshSeq) return
 
+			lastOkSeq = seq
 			set({
 				vehicles,
 				activeCount: meta.count ?? vehicles.length,
@@ -379,10 +392,11 @@ export const useStore = create((set, get) => ({
 			})
 			get().checkProximity()
 		} catch {
-			// Only the NEWEST request gets to say the network failed: an older,
-			// slower one rejecting after a newer one succeeded was flipping a
-			// legitimately empty result to "Walang koneksyon".
-			if (seq === refreshSeq) set({ error: getCopy().common.offline })
+			// Anything that has not been overtaken by a SUCCESS may report the
+			// failure. An older, slower rejection arriving after a newer answer
+			// landed still stays quiet — that is the case this guard exists for,
+			// and it is the only one.
+			if (seq > lastOkSeq) set({ error: getCopy().common.offline })
 		} finally {
 			if (seq === refreshSeq) set({ loading: false })
 		}
