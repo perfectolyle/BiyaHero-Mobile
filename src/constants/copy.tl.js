@@ -74,8 +74,8 @@ export const mapHome = {
 	// Kapag may filter, ang bilang ay hindi na tungkol sa kalsada: "0 sasakyan
 	// aktibo ngayon" habang may labing-siyam na dumadaan sa kanto.
 	filteredCount: n => `${n} ang tugma sa filter mo`,
-	updateNote: 'Nag-a-update kada 8 segundo · walang location permission',
-	updateNoteLocated: 'Nag-a-update kada 8 segundo · ipinapakita ang lokasyon mo',
+	updateNote: 'Awtomatikong nag-a-update · walang location permission',
+	updateNoteLocated: 'Awtomatikong nag-a-update · ipinapakita ang lokasyon mo',
 	myLocation: 'Ipakita ang lokasyon ko',
 	locationServicesOff: 'Naka-off ang Location (GPS) ng telepono mo. Buksan ito para makita ang lokasyon mo.',
 	layers: 'Anyo ng mapa',
@@ -479,6 +479,7 @@ export const driverProfile = {
 export const common = {
 	back: 'Bumalik',
 	close: 'Isara',
+	updateReady: 'Bagong bersyon — i-tap para i-reload',
 	cancel: 'Kanselahin',
 	retry: 'Subukan ulit',
 	loading: 'Sandali lang…',

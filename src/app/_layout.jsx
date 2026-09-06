@@ -18,6 +18,7 @@ import { usePrefs } from '@/services/prefs'
 import { useTheme } from '@/theme/useTheme'
 import { Splash } from '@/components/Splash'
 import { Toast } from '@/components/Toast'
+import { UpdateBanner } from '@/components/UpdateBanner'
 import { WatchingBanner } from '@/components/WatchingBanner'
 import '../global.css'
 
@@ -78,6 +79,7 @@ export default function RootLayout() {
 							<Stack screenOptions={{ headerShown: false, animation: 'fade' }} />
 						</SafeAreaInsetsContext.Provider>
 						<Toast />
+						<UpdateBanner />
 					</>
 				) : (
 					<Splash />

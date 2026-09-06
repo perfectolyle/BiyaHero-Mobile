@@ -73,8 +73,8 @@ export const mapHome = {
 	// With a filter on, the plain count is a claim about the road that is not
 	// true: "0 vehicles active now" while nineteen jeepneys pass the corner.
 	filteredCount: n => `${n} match your filters`,
-	updateNote: 'Updates every 8 seconds · no location permission',
-	updateNoteLocated: 'Updates every 8 seconds · showing your location',
+	updateNote: 'Updates automatically · no location permission',
+	updateNoteLocated: 'Updates automatically · showing your location',
 	myLocation: 'Show my location',
 	locationServicesOff: "Your phone's Location (GPS) is off. Turn it on to see where you are.",
 	layers: 'Map type',
@@ -440,6 +440,7 @@ export const help = {
 export const common = {
 	back: 'Back',
 	close: 'Close',
+	updateReady: 'New version — tap to reload',
 	cancel: 'Cancel',
 	retry: 'Try again',
 	loading: 'One moment…',

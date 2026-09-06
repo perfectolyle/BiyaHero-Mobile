@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { distanceM } from '@/services/geo'
-import { View, ScrollView, Pressable, ActivityIndicator } from 'react-native'
+import { View, ScrollView, Pressable, ActivityIndicator, RefreshControl } from 'react-native'
 import { useRouter, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
@@ -15,6 +15,7 @@ import { Txt } from '@/components/ui/Txt'
 import { Chip } from '@/components/ui/Chip'
 import { fetchRoute } from '@/services/api'
 import { useStore } from '@/services/store'
+import { checkForUpdate } from '@/services/updates'
 import { elevation } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
 import { useCopy } from '@/constants/copy'
@@ -75,6 +76,7 @@ export default function MapHome() {
 	const setVehicleFilter = useStore(s => s.setVehicleFilter)
 	const clearDestination = useStore(s => s.clearDestination)
 	const selectVehicle = useStore(s => s.selectVehicle)
+	const refresh = useStore(s => s.refresh)
 	const startPolling = useStore(s => s.startPolling)
 	const stopPolling = useStore(s => s.stopPolling)
 	const myLocation = useStore(s => s.myLocation)
@@ -91,6 +93,10 @@ export default function MapHome() {
 	const awaitingFirstReply = !hasReplied && !error
 
 	const [locateNonce, setLocateNonce] = useState(0)
+	// Pull to refresh. The list already reconciles on its own, so this is not
+	// how the data stays current — it is the gesture a rider reaches for when
+	// they want to be SURE, and the moment to look for a new app bundle too.
+	const [pulling, setPulling] = useState(false)
 	// Where the sheet is resting. The map is padded by it, so collapsing the
 	// sheet genuinely gives the map the screen rather than just covering less.
 	const [sheetPos, setSheetPos] = useState('peek')
@@ -98,6 +104,15 @@ export default function MapHome() {
 	// Camera committed to the selected jeepney. Off by default: the commuter
 	// asked to see ONE vehicle, not to have the map taken away from them.
 	const [following, setFollowing] = useState(false)
+
+	const onPull = async () => {
+		setPulling(true)
+		try {
+			await Promise.all([refresh(), checkForUpdate()])
+		} finally {
+			setPulling(false)
+		}
+	}
 
 	const onCrosshair = async () => {
 		if (myLocationOn) {
@@ -470,7 +485,11 @@ export default function MapHome() {
 					</View>
 				) : null}
 
-				<ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-[10px] pb-8">
+				<ScrollView
+					showsVerticalScrollIndicator={false}
+					contentContainerClassName="gap-[10px] pb-8"
+					refreshControl={<RefreshControl refreshing={pulling} onRefresh={onPull} tintColor={theme.icon.secondary} colors={[theme.brand.hover]} />}
+				>
 					{awaitingFirstReply ? (
 						<View className="items-center py-10">
 							<ActivityIndicator color={theme.brand.hover} />
