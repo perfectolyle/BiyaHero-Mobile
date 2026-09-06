@@ -43,6 +43,13 @@ const REGION_KEY = 'biyahero.mapRegion'
  * SETTLE_MS after mount, freeze, and re-open the window whenever something
  * that changes the marker's pixels changes (`redrawKey`). Position changes
  * move the frozen bitmap — they need no window.
+ *
+ * Five seconds is expensive and worth revisiting: it is 125 rasterisation
+ * ticks per pin, thirty pins deep, landing while the commuter is deciding
+ * whether the app woke up. Fonts are no longer part of the race — RootLayout
+ * gates the navigator on `fontsLoaded` — but the SVG half of it is untested,
+ * and 900ms has already failed once on this hardware. Shortening this needs a
+ * device in hand to confirm the pins still draw, not an argument.
  */
 const SETTLE_MS = 5000
 
