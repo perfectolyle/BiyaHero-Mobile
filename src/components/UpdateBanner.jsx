@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
-import { AppState, Pressable, View } from 'react-native'
+import { useEffect } from 'react'
+import { AppState, Pressable } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MaterialIcons } from '@expo/vector-icons'
+import { useUpdates } from 'expo-updates'
 import { Txt } from '@/components/ui/Txt'
-import { checkForUpdate, applyUpdate } from '@/services/updates'
+import { checkForUpdate, applyUpdate, isSupported } from '@/services/updates'
 import { elevation } from '@/theme/tokens'
 import { useTheme } from '@/theme/useTheme'
 import { useCopy } from '@/constants/copy'
@@ -11,40 +12,46 @@ import { useCopy } from '@/constants/copy'
 /**
  * "A new version is ready — tap to reload."
  *
- * Shown only once a new bundle is fully downloaded, so the tap is instant
- * rather than a spinner over an unknown wait. It checks on mount and every
- * time the app comes back to the foreground, which is when a tester who has
- * been handed "try it again now" actually looks.
+ * Shown only once a new bundle is fully DOWNLOADED, so the tap is a reload
+ * rather than a spinner over an unknown wait.
  *
- * Deliberately not automatic: reloading yanks the screen out from under
- * whoever is mid-tap, and a driver mid-trip must never lose their run to a
- * cosmetic update. The choice stays theirs.
+ * `isUpdatePending` is the source of truth, not our own check. expo-updates
+ * fetches on launch all by itself, so by the time this component asked, the
+ * server had nothing newer to offer and the check came back empty — while a
+ * downloaded update sat waiting for a relaunch that a tester never performs.
+ * The hook reports that pending bundle however it arrived: the launch fetch,
+ * our foreground check, or a pull on the list.
+ *
+ * Deliberately not automatic. Reloading yanks the screen out from under
+ * whoever is mid-tap, and a driver mid-trip must not lose their run to a
+ * cosmetic update, so the choice stays theirs.
  */
 export const UpdateBanner = () => {
 	const copy = useCopy()
 	const { theme } = useTheme()
 	const insets = useSafeAreaInsets()
-	const [ready, setReady] = useState(false)
+	const { isUpdatePending } = useUpdates()
 
+	// The check on mount is not (only) about finding a new bundle — it is how
+	// the hook learns what native already knows. expo-updates downloads on
+	// launch, and that download routinely finishes before this JS has a
+	// listener attached, so the pending flag lands in a state-change event
+	// nobody is listening for yet and the hook seeds `false` from a context
+	// captured earlier. Asking native anything re-emits the current context,
+	// pending flag included. Coming back to the foreground is worth a fresh
+	// ask for the ordinary reason: it is when a tester actually looks.
 	useEffect(() => {
-		let alive = true
+		if (!isSupported()) return
 
-		const look = async () => {
-			if (await checkForUpdate() === 'ready' && alive) setReady(true)
-		}
-
-		look()
+		checkForUpdate()
 		const sub = AppState.addEventListener('change', state => {
-			if (state === 'active') look()
+			if (state === 'active') checkForUpdate()
 		})
 
-		return () => {
-			alive = false
-			sub.remove()
-		}
+		return () => sub.remove()
 	}, [])
 
-	if (!ready) return null
+	if (!isUpdatePending) return null
 
 	return (
 		<Pressable
